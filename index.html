@@ -12,8 +12,12 @@ h1{font-size:clamp(31px,6vw,50px);margin:0 0 10px;font-weight:800;letter-spacing
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;background:var(--panel);border:2px solid var(--border);border-radius:30px;padding:26px}
 .stat{background:var(--panel2);border-radius:24px;text-align:center;padding:25px 8px}.stat strong{display:block;font-size:42px}.stat span{color:var(--muted);font-size:17px}
 section{background:var(--panel);border:2px solid var(--border);border-radius:30px;margin-top:22px;padding:28px}
+.draw-area{display:flex;flex-direction:column;gap:12px}
 .draw{width:100%;border:0;border-radius:25px;background:var(--accent);color:#fff;font-weight:800;font-size:22px;padding:25px;cursor:pointer}
-.draw:active{transform:translateY(2px)}h2{margin:0 0 18px;font-size:27px}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.draw:active{transform:translateY(2px)}
+.reset-deck-btn{width:100%;border:1px solid var(--border);border-radius:18px;background:#171c27;color:#fff;font-weight:700;font-size:16px;padding:14px;cursor:pointer}
+.reset-deck-btn:active{transform:translateY(2px)}
+h2{margin:0 0 18px;font-size:27px}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
 .card{background:var(--panel2);border:1px solid var(--border);border-radius:20px;padding:17px;min-height:170px;display:flex;flex-direction:column;justify-content:space-between}
 .card-head{display:flex;align-items:center;gap:9px}.card-name{font-size:19px;font-weight:800}.badge{font-size:12px;border-radius:999px;padding:4px 8px;font-weight:800;white-space:nowrap}
 .white{background:#eee;color:#222}.black{background:#292d38;color:#fff;border:1px solid #596174}.green{background:#287d51;color:#fff}
@@ -58,7 +62,13 @@ input,textarea,select{width:100%;background:#10141d;border:1px solid var(--borde
   <button type="button" class="small point-reset" id="resetPoints">ポイントを0に戻す</button>
 </section>
 
-<section><button class="draw" id="drawBtn">🎴 山札からカードを引く</button></section>
+<section>
+  <div class="draw-area">
+    <button class="draw" id="drawBtn">🎴 山札からカードを引く</button>
+    <button class="reset-deck-btn" id="resetDeckMainBtn">🔄 山札をリセット（手札・使用済みを全て山札へ戻す）</button>
+  </div>
+</section>
+
 <section><h2>🃏 手札</h2><div id="hand" class="cards"></div></section>
 <section>
 <details><summary>▶ ⚙️ カード・山札を編集</summary>
@@ -126,6 +136,16 @@ function render(){
  if(!state.hand.length)h.innerHTML='<div class="empty">まだカードがありません。山札から引いてください。</div>';
  let unique=[...new Set(state.hand)];unique.forEach(id=>{let c=getCard(id);if(c)h.appendChild(cardEl(c,"hand"))});
 }
+
+function resetDeckAll(){
+ state.deck=[];
+ state.hand=[];
+ state.used=[];
+ state.cards.forEach(c=>{for(let i=0;i<c.copies;i++)state.deck.push(c.id)});
+ save();
+ toast("山札をリセットしました");
+}
+
 document.getElementById("drawBtn").onclick=()=>{
  if(!state.deck.length){toast("山札がありません");return}
  let i=Math.floor(Math.random()*state.deck.length),id=state.deck.splice(i,1)[0];state.hand.push(id);save();toast("「"+(getCard(id)?.name||"カード")+"」を引きました！")
@@ -136,7 +156,13 @@ document.getElementById("addBtn").onclick=()=>{
  let c={id:crypto.randomUUID(),name,color,desc,copies};state.cards.push(c);for(let i=0;i<copies;i++)state.deck.push(c.id);
  document.getElementById("cardName").value="";document.getElementById("cardDesc").value="";save();toast("カードを追加しました")
 };
-document.getElementById("resetDeck").onclick=()=>{state.deck=[];state.hand=[];state.used=[];state.cards.forEach(c=>{for(let i=0;i<c.copies;i++)state.deck.push(c.id)});save();toast("山札を初期化しました")};
+
+document.getElementById("resetDeckMainBtn").onclick=()=>{
+ if(confirm("手札・使用済みのカードをすべて消去し、山札を初期状態に戻しますか？")){
+  resetDeckAll();
+ }
+};
+document.getElementById("resetDeck").onclick=()=>resetDeckAll();
 document.getElementById("returnUsed").onclick=()=>{state.deck.push(...state.used);state.used=[];save();toast("使用済みを山札へ戻しました")};
 document.getElementById("clearAll").onclick=()=>{if(!confirm("登録カードをすべて初期状態に戻しますか？"))return;localStorage.removeItem(KEY);state=load();save();toast("初期化しました")};
 
