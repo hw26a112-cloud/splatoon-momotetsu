@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>🦑 スプラ桃鉄 カード管理</title>
+<title>居合い スプラ桃鉄 カード管理</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
-:root{--bg:#0f1118;--panel:#1b202c;--panel2:#10141d;--border:#30394b;--text:#f7f8fb;--muted:#9ba4b6;--accent:#5865f2;--green:#287d51}
+:root{--bg:#0f1118;--panel:#1b202c;--panel2:#10141d;--border:#30394b;--text:#f7f8fb;--muted:#9ba4b6;--accent:#5865f2;--green:#287d51;--history:#a855f7}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}
 .app{max-width:900px;margin:auto;padding:18px 22px 60px}.hero{padding:30px 8px 20px}
 h1{font-size:clamp(28px,5vw,42px);margin:0 0 10px;font-weight:800;letter-spacing:-1px}.hero p{margin:0;color:var(--muted);font-size:16px}
@@ -16,13 +16,15 @@ section{background:var(--panel);border:2px solid var(--border);border-radius:24p
 .draw-area{display:flex;flex-direction:column;gap:12px}
 .draw{width:100%;border:0;border-radius:20px;background:var(--accent);color:#fff;font-weight:800;font-size:20px;padding:20px;cursor:pointer}
 .draw:active{transform:translateY(2px)}
+.draw-history{background:var(--history)}
 .reset-deck-btn{width:100%;border:1px solid var(--border);border-radius:16px;background:#171c27;color:#fff;font-weight:700;font-size:15px;padding:12px;cursor:pointer}
 h2{margin:0 0 16px;font-size:22px}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
 .card{background:var(--panel2);border:1px solid var(--border);border-radius:18px;padding:15px;min-height:150px;display:flex;flex-direction:column;justify-content:space-between}
-.card-head{display:flex;align-items:center;gap:8px}.card-name{font-size:17px;font-weight:800}.badge{font-size:11px;border-radius:999px;padding:3px 7px;font-weight:800;white-space:nowrap}
-.white{background:#eee;color:#222}.black{background:#292d38;color:#fff;border:1px solid #596174}.green{background:#287d51;color:#fff}
-.card-desc{color:#b5bdca;font-size:13px;line-height:1.5;margin-top:8px}.copies{color:#8e98ab;font-size:12px;margin-top:8px}.card-actions{display:flex;gap:8px;margin-top:12px}
-.small,.primary,.danger{border:1px solid var(--border);background:#171c27;color:#fff;border-radius:12px;padding:8px 10px;cursor:pointer}.primary{background:var(--accent);border:0;font-weight:700}.danger{background:#7c3040;border:0}
+.card-img{width:100%;height:160px;object-fit:cover;border-radius:12px;margin-bottom:10px;border:1px solid var(--border)}
+.card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}.card-name{font-size:17px;font-weight:800}.badge{font-size:11px;border-radius:999px;padding:3px 7px;font-weight:800;white-space:nowrap}
+.white{background:#eee;color:#222}.black{background:#292d38;color:#fff;border:1px solid #596174}.green{background:#287d51;color:#fff}.purple{background:var(--history);color:#fff}
+.card-desc{color:#b5bdca;font-size:13px;line-height:1.5;margin-top:8px;white-space:pre-wrap;}.copies{color:#8e98ab;font-size:12px;margin-top:8px}.card-actions{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.small,.primary,.danger,.swap-btn{border:1px solid var(--border);background:#171c27;color:#fff;border-radius:12px;padding:8px 10px;cursor:pointer;font-size:12px}.primary{background:var(--accent);border:0;font-weight:700}.danger{background:#7c3040;border:0}.swap-btn{background:#d97706;border:0;font-weight:700}
 .empty{color:var(--muted);padding:10px 0}
 .toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);background:#fff;color:#111;padding:12px 17px;border-radius:14px;font-weight:700;opacity:0;transition:.2s;pointer-events:none;z-index:99}.toast.show{opacity:1;transform:translate(-50%,0)}
 
@@ -36,13 +38,20 @@ h2{margin:0 0 16px;font-size:22px}.cards{display:grid;grid-template-columns:repe
 details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
 .deck-view-container{margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
 
+/* 全体リセットボタン用スタイル */
+.reset-all-container{margin-top:30px;padding:22px;background:#241216;border:2px solid #7c3040;border-radius:24px;text-align:center}
+.reset-all-btn{width:100%;border:0;border-radius:18px;background:#b91c1c;color:#fff;font-weight:800;font-size:18px;padding:18px;cursor:pointer;transition:.2s}
+.reset-all-btn:active{transform:scale(0.98)}
+
 /* ルーム機能スタイル */
 .room-box{display:flex;flex-direction:column;gap:12px}
 .room-inputs{display:flex;gap:8px}
-.room-status{font-weight:700;color:var(--accent);margin-top:8px;font-size:15px}
+.room-status-bar{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.room-status{font-weight:700;color:var(--accent);font-size:15px}
 .peer-card{background:var(--panel2);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:12px}
 .peer-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px}
 .peer-name{font-weight:800;font-size:18px}.peer-pts{background:var(--accent);padding:4px 10px;border-radius:10px;font-size:14px;font-weight:800}
+.peer-section-title{font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:700}
 .peer-hand-list{display:flex;flex-wrap:wrap;gap:8px}
 .mini-card{background:var(--panel);border:1px solid var(--border);padding:6px 10px;border-radius:8px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
 
@@ -51,7 +60,7 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
 </head>
 <body>
 <div class="app">
-<header class="hero"><h1>🦑 スプラ桃鉄 カード管理</h1><p>スマホ向け・リアルタイム対戦対応</p></header>
+<header class="hero"><h1>領域展開 スプラ桃鉄 カード管理</h1><p>スマホ向け・リアルタイム対戦対応</p></header>
 
 <!-- ルーム参加機能 -->
 <section>
@@ -65,13 +74,16 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
       <input id="roomCodeInput" placeholder="6桁のコードを入力" style="flex:1">
       <button class="small" id="joinRoomBtn">参加</button>
     </div>
-    <div id="roomStatus" class="room-status">未接続（ソロモード）</div>
+    <div class="room-status-bar">
+      <div id="roomStatus" class="room-status">未接続（ソロモード）</div>
+      <button class="danger" id="leaveRoomBtn" style="display:none;">退室する</button>
+    </div>
   </div>
 </section>
 
 <!-- 全員の公開状況 -->
 <section id="otherPlayersSection" style="display:none;">
-  <h2>👥 全員の所持カード・ポイント</h2>
+  <h2>👥 全員の所持カード・歴史ヒーロー・ポイント</h2>
   <div id="otherPlayersList"></div>
 </section>
 
@@ -114,10 +126,31 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
 </section>
 
 <section><h2>🃏 自分の手札</h2><div id="hand" class="cards"></div></section>
+
+<!-- 歴史ヒーローセクション -->
+<section>
+  <h2>🏛️ 歴史ヒーロー</h2>
+  <div class="draw-area">
+    <button class="draw draw-history" id="drawHistoryBtn">📜 歴史ヒーローカードを引く（要 10pt / 残り: <span id="historyDeckCount">0</span>枚）</button>
+    <button class="reset-deck-btn" id="resetHistoryDeckBtn">🔄 歴史ヒーローをリセット（捨てたカードを含め全て山札へ戻す）</button>
+  </div>
+  <div style="margin-top:16px;">
+    <h3>所持している歴史ヒーロー</h3>
+    <div id="historyHand" class="cards"></div>
+  </div>
+</section>
+
+<!-- 一括全リセットセクション -->
+<div class="reset-all-container">
+  <button class="reset-all-btn" id="resetAllBtn">💥 全てを一括リセット（ポイント0・全手札・歴史ヒーロー初期化）</button>
+</div>
+
 </div><div id="toast" class="toast"></div>
 
 <script>
-const KEY="splatoon_momotetsu_card_manager_v5";
+const KEY="splatoon_momotetsu_card_manager_v15";
+
+// 通常カード定義
 const cards=[
 ["とっかえっこカード","白","自分の持ち点と、他の人の持ち点を入れ替える",1],
 ["2倍カード","白","次の試合での獲得ポイント×2（マイナスの場合も）",3],
@@ -145,9 +178,31 @@ const cards=[
 ["最下位カード","緑","最下位で使うと何かが起きる（最下位でのみ使用可能）",2],
 ["牛歩カード","黒","入手した次の試合の最高取得ポイントが1になる",1],
 ["千載一遇カード","白","ランダムに出た1～9の数字分取得ポイントの条件が緩和される",2]
-].map(x=>({id:crypto.randomUUID(),name:x[0],color:x[1],desc:x[2],copies:x[3]}));
+].map(x=>({id:crypto.randomUUID(),name:x[0],color:x[1],desc:x[2],copies:x[3],img:x[4]||""}));
 
-function makeInitial(){let deck=[];cards.forEach(c=>{for(let i=0;i<c.copies;i++)deck.push(c.id)});return{cards,deck,hand:[],used:[],discarded:[],points:0,name:""}}
+// 歴史ヒーローカード定義
+const historyCards=[
+["かわらばやし","紫","・毎ターン行動できる。ランダムでポイントを獲得できる(1、3、5ポイントの中から)\n・クビ：これを引くと所持ポイントが0になるかつ、かわらばやしが消える",1, "632233501231677633.jpg"],
+["アブドラ","紫","・自分が引いた悪いカードの効果を 50% の確率で無効化できる",1, "632193350484623611.jpg"],
+["日野社長","紫","・毎ターン 50% の確率でカードを生み出す",1, "632193483276812833.jpg"],
+["ヤラセさん","紫","・毎試合後 50% の確率で失敗をなかったことにできる",1, "632193682875351126.jpg"],
+["トゲニャン","紫","・相手から受ける悪いカードの効果を 50% の確率で無効化する（無効化できた時はその効果を跳ね返す）",1, "632193783521345625.jpg"],
+["カクさん","紫","・毎試合後 50% の確率で自分を除いた他のプレイヤーに獲得ポイントの半分を拡散する（失敗時のみ発動）",1, "632193925490147896.jpg"],
+["クーパー","紫","・毎ターン発動可能、自身を除く他のプレイヤー1人をランダムに自身と同じ合計ポイントにする\n・発動後、このカードは消える\n・9ターン目の終わりまで発動されなかった場合強制的に能力を発動させる",1, "632194138208469680.jpg"],
+["マッスル","紫","・毎ターン 50% の確率で発動する。このカードが発動した時、プレイヤーの合計ポイントが 1、2 位の時、徳政令カードをドローする。プレイヤーの合計ポイントが 3、4 位の時、千載一遇カードをドローする。\n・10ターン目終了かつ、このカードを所持しているプレイヤーの合計ポイントが最下位の時、とっかえカードをドローする",1, "632194635368497207.jpg"],
+["パンデミック","紫","・毎試合後 50% の確率で発動する。自分を除く他のプレイヤーが失敗した時、そのポイントを 2 倍にする",1, "632195425944469952.jpg"],
+["深田えいみ","紫","・毎ターン 50% の確率で発動する。自分を除く、他のプレイヤーが歴史ヒーローを所持している時、ランダムなプレイヤーから歴史ヒーローを寝取る\n・寝取り後、このカードは消える",1, "632195657167798275.jpg"],
+["堀大輔","紫","・毎ターン発動する。起きる/寝るのルーレットを引くことができる\n・初期堀ポイントは 1\n(寝た場合) 現在所持している堀ポイントを 3 倍する\n(起きた場合) 現在所持している堀ポイントを獲得できる\n・連続して 3 ターン起きた場合、このカードは消える",1, "632195894766207203.jpg"],
+["いまい らちお","紫","毎試合後 50% の確率で成功した時のポイントを 2 倍にする",1, "632238913796702345.jpg"],
+["イケメン犬","紫","・毎ターン 50% の確率で発動する。自分はランダムなカードをドローすることができるかつ、自分を除く他プレイヤー1人にキングデビルカードをドローさせる",1, "IMG_9336.JPG"]
+].map(x=>({id:crypto.randomUUID(),name:x[0],color:x[1],desc:x[2],copies:x[3],img:x[4]||""}));
+
+function makeInitial(){
+  let deck=[]; cards.forEach(c=>{for(let i=0;i<c.copies;i++)deck.push(c.id)});
+  let historyDeck=[]; historyCards.forEach(c=>{for(let i=0;i<c.copies;i++)historyDeck.push(c.id)});
+  return{cards,historyCards,deck,historyDeck,hand:[],historyHand:[],historyDiscarded:[],used:[],discarded:[],points:0,name:"",historyStatus:{}}
+}
+
 let state=load();
 function load(){
   try{
@@ -155,25 +210,33 @@ function load(){
     if(s&&s.cards){
       if(typeof s.points!=="number"||!Number.isFinite(s.points))s.points=0;
       if(!Array.isArray(s.discarded))s.discarded=[];
+      if(!Array.isArray(s.historyDeck)) s.historyDeck = historyCards.map(c=>c.id);
+      if(!Array.isArray(s.historyHand)) s.historyHand = [];
+      if(!Array.isArray(s.historyDiscarded)) s.historyDiscarded = [];
+      if(!s.historyStatus) s.historyStatus = {};
+      s.historyCards = historyCards;
       return s;
     }
   }catch(e){}
   return makeInitial();
 }
+
 function save(){localStorage.setItem(KEY,JSON.stringify(state));render();broadcastState();}
-function getCard(id){return state.cards.find(c=>c.id===id)}
-function toast(t){let x=document.getElementById("toast");x.textContent=t;x.classList.add("show");setTimeout(()=>x.classList.remove("show"),1500)}
-function cls(c){return c==="白"?"white":c==="黒"?"black":"green"}
+function getCard(id){return state.cards.find(c=>c.id===id) || state.historyCards.find(c=>c.id===id)}
+function toast(t){let x=document.getElementById("toast");x.textContent=t;x.classList.add("show");setTimeout(()=>x.classList.remove("show"),2000)}
+function cls(c){return c==="白"?"white":c==="黒"?"black":c==="紫"?"purple":"green"}
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 
 // --- PeerJS / リアルタイム同期 ---
 let peer=null, conns=[], otherStates={};
 function initPeer(customId=null){
+  if(peer) leaveRoom();
   peer = customId ? new Peer(customId) : new Peer();
   peer.on('open', id => {
     if(customId){
       document.getElementById("roomStatus").textContent = `🏠 ルーム作成中 | コード: ${id.replace('spla-momo-','')}`;
       document.getElementById("otherPlayersSection").style.display="block";
+      document.getElementById("leaveRoomBtn").style.display="inline-block";
     }
   });
   peer.on('connection', conn => {
@@ -184,9 +247,14 @@ function initPeer(customId=null){
 
 function setupConn(conn){
   conn.on('data', data => {
+    if(data.type === 'set_points') {
+      state.points = data.points;
+      save();
+      toast(`⚡ ポイントが ${data.points}pt に変更されました！`);
+      return;
+    }
     otherStates[conn.peer] = data;
     renderOtherPlayers();
-    // ホストなら他プレイヤーへ転送
     conns.forEach(c => {
       if(c !== conn && c.open) c.send(data);
     });
@@ -199,10 +267,28 @@ function setupConn(conn){
 }
 
 function broadcastState(){
+  if(!peer) return;
   let myName = document.getElementById("playerNameInput").value.trim() || "匿名プレイヤー";
   let myHandCards = state.hand.map(id => getCard(id)).filter(Boolean).map(c => ({name: c.name, color: c.color}));
-  let payload = { peerId: peer?peer.id:"", name: myName, points: state.points, hand: myHandCards };
+  let myHistoryCards = state.historyHand.map(id => {
+    let c = getCard(id);
+    if(!c) return null;
+    let st = state.historyStatus[id] ? `【${state.historyStatus[id]}】` : '';
+    return {name: c.name + st, color: c.color};
+  }).filter(Boolean);
+  let payload = { peerId: peer.id, name: myName, points: state.points, hand: myHandCards, historyHand: myHistoryCards };
   conns.forEach(c => { if(c.open) c.send(payload); });
+}
+
+function leaveRoom(){
+  conns.forEach(c => c.close());
+  conns = [];
+  otherStates = {};
+  if(peer){ peer.destroy(); peer = null; }
+  document.getElementById("roomStatus").textContent = "未接続（ソロモード）";
+  document.getElementById("otherPlayersSection").style.display = "none";
+  document.getElementById("leaveRoomBtn").style.display = "none";
+  toast("ルームから退室しました");
 }
 
 document.getElementById("createRoomBtn").onclick = () => {
@@ -214,6 +300,7 @@ document.getElementById("createRoomBtn").onclick = () => {
 document.getElementById("joinRoomBtn").onclick = () => {
   let code = document.getElementById("roomCodeInput").value.trim().toUpperCase();
   if(!code){ toast("コードを入力してください"); return; }
+  leaveRoom();
   peer = new Peer();
   peer.on('open', () => {
     let conn = peer.connect('spla-momo-' + code);
@@ -221,9 +308,12 @@ document.getElementById("joinRoomBtn").onclick = () => {
     setupConn(conn);
     document.getElementById("roomStatus").textContent = `✅ ルームに参加中 (${code})`;
     document.getElementById("otherPlayersSection").style.display="block";
+    document.getElementById("leaveRoomBtn").style.display="inline-block";
     toast("ルームに参加しました");
   });
 };
+
+document.getElementById("leaveRoomBtn").onclick = () => leaveRoom();
 
 function renderOtherPlayers(){
   let container = document.getElementById("otherPlayersList");
@@ -235,7 +325,9 @@ function renderOtherPlayers(){
   }
   keys.forEach(k => {
     let p = otherStates[k];
-    let cardHtml = p.hand.map(c => `<span class="mini-card"><span class="badge ${cls(c.color)}">${c.color}</span> ${esc(c.name)}</span>`).join("");
+    let cardHtml = (p.hand||[]).map(c => `<span class="mini-card"><span class="badge ${cls(c.color)}">${c.color}</span> ${esc(c.name)}</span>`).join("");
+    let historyHtml = (p.historyHand||[]).map(c => `<span class="mini-card"><span class="badge ${cls(c.color)}">${c.color}</span> ${esc(c.name)}</span>`).join("");
+    
     let el = document.createElement("div");
     el.className = "peer-card";
     el.innerHTML = `
@@ -243,28 +335,189 @@ function renderOtherPlayers(){
         <span class="peer-name">👤 ${esc(p.name)}</span>
         <span class="peer-pts">${p.points} pt</span>
       </div>
+      <div class="peer-section-title">🃏 通常手札</div>
       <div class="peer-hand-list">${cardHtml || '<span class="empty">手札なし</span>'}</div>
+      <div class="peer-section-title">📜 歴史ヒーロー</div>
+      <div class="peer-hand-list">${historyHtml || '<span class="empty">所持なし</span>'}</div>
     `;
     container.appendChild(el);
   });
 }
 
+// --- 歴史ヒーロー個別の特殊処理 ---
+function handleHistoryAction(card){
+  if(card.name === "かわらばやし"){
+    executeKawarabayashi(card.id);
+  } else if(card.name === "アブドラ" || card.name === "ヤラセさん" || card.name === "トゲニャン"){
+    let res = Math.random() < 0.5 ? "成功" : "失敗";
+    state.historyStatus[card.id] = res;
+    toast(`${card.name}：【${res}】`);
+    save();
+  } else if(card.name === "日野社長"){
+    let res = Math.random() < 0.5 ? "発動" : "不発";
+    state.historyStatus[card.id] = res;
+    if(res === "発動"){
+      if(state.deck.length > 0){
+        let i = Math.floor(Math.random() * state.deck.length);
+        let drawnId = state.deck.splice(i, 1)[0];
+        state.hand.push(drawnId);
+        let drawnCard = getCard(drawnId);
+        toast(`日野社長：【発動】！ 山札から「${drawnCard?.name || 'カード'}」を獲得しました！`);
+      } else {
+        toast(`日野社長：【発動】！ (山札が空のためカードを引けませんでした)`);
+      }
+    } else {
+      toast(`日野社長：【不発】`);
+    }
+    save();
+  } else if(card.name === "クーパー"){
+    let keys = Object.keys(otherStates);
+    if(!keys.length){
+      toast("クーパー：ルーム内に自分以外のプレイヤーがいません");
+      return;
+    }
+    let targetPeerId = keys[Math.floor(Math.random() * keys.length)];
+    let targetName = otherStates[targetPeerId]?.name || "プレイヤー";
+    
+    // 対象の通信コネクションを探してポイント変更命令を送信
+    let conn = conns.find(c => c.peer === targetPeerId);
+    if(conn && conn.open){
+      conn.send({ type: 'set_points', points: state.points });
+      toast(`クーパー発動！ ${targetName} のポイントを自分と同じ(${state.points}pt)にしました！`);
+    } else {
+      toast("通信エラー：対象のプレイヤーへ送信できませんでした");
+    }
+    save();
+  } else {
+    toast("歴史ヒーロー「" + card.name + "」を発動しました（手札に残ります）");
+  }
+}
+
+// --- かわらばやしの効果処理（重み付きランダム） ---
+function executeKawarabayashi(cardId) {
+  const pool = [
+    ...Array(10).fill(1),
+    ...Array(8).fill(3),
+    ...Array(3).fill(5),
+    ...Array(1).fill("クビ")
+  ];
+  
+  const result = pool[Math.floor(Math.random() * pool.length)];
+
+  if (result === "クビ") {
+    state.points = 0;
+    delete state.historyStatus[cardId];
+    let idx = state.historyHand.indexOf(cardId);
+    if (idx >= 0) {
+      state.historyHand.splice(idx, 1);
+      state.historyDiscarded.push(cardId);
+    }
+    toast("💥 かわらばやし：【クビ】が出ました！ポイントが0になり、かわらばやしが消滅しました");
+  } else {
+    state.points += result;
+    toast(`🎲 かわらばやし：【${result}pt】を獲得！ (+${result}pt)`);
+  }
+  save();
+}
+
+// --- 歴史ヒーローの交換処理（10pt以上の時実行可能） ---
+function swapHistoryCard(targetHistoryId) {
+  if (state.points < 10) {
+    toast("ポイントが足りません（10pt以上が必要）");
+    return;
+  }
+  if (!state.hand.length) {
+    toast("交換するための通常手札がありません");
+    return;
+  }
+  if (!state.historyDeck.length) {
+    toast("引き直す歴史ヒーローの山札がありません");
+    return;
+  }
+
+  // 1. ポイント消費 (-10pt)
+  state.points -= 10;
+
+  // 2. 交換ボタンを押した「歴史ヒーローカード」を所持手札から自動破棄
+  delete state.historyStatus[targetHistoryId];
+  let hIdx = state.historyHand.indexOf(targetHistoryId);
+  if (hIdx >= 0) {
+    state.historyHand.splice(hIdx, 1);
+    state.historyDiscarded.push(targetHistoryId);
+  }
+
+  // 3. 通常の手札からランダムに1枚破棄
+  let randIndex = Math.floor(Math.random() * state.hand.length);
+  let discardedId = state.hand.splice(randIndex, 1)[0];
+  state.discarded.push(discardedId);
+  let discardedCard = getCard(discardedId);
+
+  // 4. 歴史ヒーローをランダムに無償で1枚獲得
+  let newHIndex = Math.floor(Math.random() * state.historyDeck.length);
+  let newHistoryId = state.historyDeck.splice(newHIndex, 1)[0];
+  state.historyHand.push(newHistoryId);
+  let newHistoryCard = getCard(newHistoryId);
+
+  save();
+  toast(`🔄 交換完了！「${discardedCard?.name || 'カード'}」と元の歴史ヒーローを破棄し、「${newHistoryCard?.name || '新歴史ヒーロー'}」を獲得！ (-10pt)`);
+}
+
 // --- 基本レンダリング & 操作 ---
-function cardEl(c,where){
+function cardEl(c, isHistory=false){
  let el=document.createElement("div");el.className="card";
- el.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div></div><div class="card-actions"><button class="small action">使用済みにする</button><button class="small discard">捨てる</button></div>`;
+ let imgHtml = c.img ? `<img src="${esc(c.img)}" class="card-img" alt="${esc(c.name)}">` : '';
+ 
+ let buttonsHtml = `<button class="small action">${isHistory?'使用する':'使用済みにする'}</button>`;
+ if(isHistory) {
+   buttonsHtml += `<button class="swap-btn swap">交換(-10pt)</button>`;
+ }
+ buttonsHtml += `<button class="small discard">捨てる${isHistory?'(-10pt)':''}</button>`;
+
+ let displayName = c.name;
+ if(isHistory && state.historyStatus[c.id]) {
+   displayName += `【${state.historyStatus[c.id]}】`;
+ }
+
+ el.innerHTML=`<div>${imgHtml}<div class="card-head"><span class="card-name">${esc(displayName)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div></div><div class="card-actions">${buttonsHtml}</div>`;
+ 
  el.querySelector(".action").onclick=()=>{
-   let i=state.hand.indexOf(c.id);
-   if(i>=0)state.hand.splice(i,1);
-   state.used.push(c.id);
-   toast("使用済みにしました");
-   save();
+   if(isHistory){
+     handleHistoryAction(c);
+   } else {
+     let i=state.hand.indexOf(c.id);
+     if(i>=0) state.hand.splice(i,1);
+     state.used.push(c.id);
+     toast("使用済みにしました");
+     save();
+   }
  };
+
+ if(isHistory){
+   el.querySelector(".swap").onclick=()=>{
+     swapHistoryCard(c.id);
+   };
+ }
+
  el.querySelector(".discard").onclick=()=>{
-   let i=state.hand.indexOf(c.id);
-   if(i>=0)state.hand.splice(i,1);
-   state.discarded.push(c.id);
-   toast("カードを捨てました");
+   if(isHistory){
+     if (state.points < 10) {
+       toast("ポイントが足りません（10pt以上が必要）");
+       return;
+     }
+     state.points -= 10;
+     delete state.historyStatus[c.id];
+     let i=state.historyHand.indexOf(c.id);
+     if(i>=0) {
+       state.historyHand.splice(i,1);
+       state.historyDiscarded.push(c.id);
+     }
+     toast("歴史ヒーローを捨てました (-10pt)");
+   } else {
+     let i=state.hand.indexOf(c.id);
+     if(i>=0) state.hand.splice(i,1);
+     state.discarded.push(c.id);
+     toast("カードを捨てました");
+   }
    save();
  };
  return el;
@@ -283,7 +536,8 @@ function renderDeckList(){
     let c=getCard(id); if(!c) return;
     let count=counts[id];
     let el=document.createElement("div");el.className="card";
-    el.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div><div class="copies">山札の残り：${count}枚</div></div><div class="card-actions"><button class="primary get-btn" style="width:100%">手札に入れる</button></div>`;
+    let imgHtml = c.img ? `<img src="${esc(c.img)}" class="card-img" alt="${esc(c.name)}">` : '';
+    el.innerHTML=`<div>${imgHtml}<div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div><div class="copies">山札の残り：${count}枚</div></div><div class="card-actions"><button class="primary get-btn" style="width:100%">手札に入れる</button></div>`;
     el.querySelector(".get-btn").onclick=()=>{
       let idx=state.deck.indexOf(id);
       if(idx>=0){
@@ -299,14 +553,19 @@ function renderDeckList(){
 
 function render(){
  document.getElementById("pointsValue").textContent=state.points;
- document.getElementById("handCount").textContent=state.hand.length;
+ document.getElementById("handCount").textContent=state.hand.length + state.historyHand.length;
  document.getElementById("deckCount").textContent=state.deck.length;
  document.getElementById("usedCount").textContent=state.used.length;
  document.getElementById("discardedCount").textContent=(state.discarded||[]).length;
+ document.getElementById("historyDeckCount").textContent=state.historyDeck.length;
  
  let h=document.getElementById("hand");h.innerHTML="";
  if(!state.hand.length)h.innerHTML='<div class="empty">まだカードがありません。山札から引いてください。</div>';
- let unique=[...new Set(state.hand)];unique.forEach(id=>{let c=getCard(id);if(c)h.appendChild(cardEl(c,"hand"))});
+ let unique=[...new Set(state.hand)];unique.forEach(id=>{let c=getCard(id);if(c)h.appendChild(cardEl(c,false))});
+
+ let hh=document.getElementById("historyHand");hh.innerHTML="";
+ if(!state.historyHand.length)hh.innerHTML='<div class="empty">歴史ヒーローを所持していません。</div>';
+ let uniqueHistory=[...new Set(state.historyHand)];uniqueHistory.forEach(id=>{let c=getCard(id);if(c)hh.appendChild(cardEl(c,true))});
 
  renderDeckList();
 }
@@ -318,13 +577,49 @@ function resetDeckAll(){
  toast("山札をリセットしました");
 }
 
+function resetHistoryDeckAll(){
+ state.historyDeck=[]; state.historyHand=[]; state.historyDiscarded=[]; state.historyStatus={};
+ state.historyCards.forEach(c=>{for(let i=0;i<c.copies;i++)state.historyDeck.push(c.id)});
+ save();
+ toast("歴史ヒーローをリセットしました");
+}
+
 document.getElementById("drawBtn").onclick=()=>{
  if(!state.deck.length){toast("山札がありません");return}
  let i=Math.floor(Math.random()*state.deck.length),id=state.deck.splice(i,1)[0];state.hand.push(id);save();toast("「"+(getCard(id)?.name||"カード")+"」を引きました！")
 };
 
+document.getElementById("drawHistoryBtn").onclick=()=>{
+ if(state.points < 10){
+   toast("ポイントが足りません（10pt以上が必要）");
+   return;
+ }
+ if(!state.historyDeck.length){toast("歴史ヒーローの山札がありません");return}
+ 
+ state.points -= 10;
+ let i=Math.floor(Math.random()*state.historyDeck.length),id=state.historyDeck.splice(i,1)[0];
+ state.historyHand.push(id);
+ save();
+ toast("📜 歴史ヒーロー「"+(getCard(id)?.name||"カード")+"」を獲得！ (-10pt)")
+};
+
 document.getElementById("resetDeckMainBtn").onclick=()=>{
  if(confirm("手札・使用済み・破棄のカードをすべて戻し、山札を初期状態に戻しますか？")){ resetDeckAll(); }
+};
+
+document.getElementById("resetHistoryDeckBtn").onclick=()=>{
+ if(confirm("所持・破棄した歴史ヒーローを全てリセットし、初期状態の山札に戻しますか？")){ resetHistoryDeckAll(); }
+};
+
+// 一括全リセット機能
+document.getElementById("resetAllBtn").onclick=()=>{
+ if(confirm("【警告】ポイントを0にし、手札・歴史ヒーロー・山札をすべてゲーム開始時の状態に戻しますか？")){
+   state.points = 0;
+   resetDeckAll();
+   resetHistoryDeckAll();
+   save();
+   toast("💥 すべての状態を初期化（リセット）しました");
+ }
 };
 
 function changePoints(amount){
