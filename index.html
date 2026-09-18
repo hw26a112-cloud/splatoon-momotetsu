@@ -480,19 +480,14 @@ function clearLogUI() {
 }
 
 function broadcastLog(msg, isAfterEffect = false) {
-  Object.values(conns).forEach(c => {
-    if (c && c.open) c.send({ type: 'log', msg: msg, isAfterEffect: isAfterEffect });
-  });
+  sendToAll({ type: 'log', msg: msg, isAfterEffect: isAfterEffect });
 }
 
 function broadcastHistoryUse(cardName, detail, isAfterEffect = false) {
   let myName = document.getElementById("playerNameInput").value.trim() || "プレイヤー";
   let fullMsg = `📜【歴史ヒーロー発動】${myName} が 「${cardName}」 を使用！ ${detail}`;
   addLog(fullMsg, true, isAfterEffect);
-  
-  Object.values(conns).forEach(c => {
-    if (c && c.open) c.send({ type: 'history_notify', name: myName, cardName: cardName, detail: detail, isAfterEffect: isAfterEffect });
-  });
+  sendToAll({ type: 'history_notify', name: myName, cardName: cardName, detail: detail, isAfterEffect: isAfterEffect });
 }
 
 document.getElementById("clearLogBtn").onclick = (e) => {
@@ -592,9 +587,7 @@ function executeMatchStart(byName = null) {
 
 document.getElementById("matchStartBtn").onclick = () => {
   executeMatchStart();
-  Object.values(conns).forEach(c => {
-    if (c && c.open) c.send({ type: 'trigger_match_start', name: document.getElementById("playerNameInput").value.trim() || "プレイヤー" });
-  });
+  sendToAll({ type: 'trigger_match_start', name: document.getElementById("playerNameInput").value.trim() || "プレイヤー" });
 };
 
 function executeMatchEnd(byName = null) {
@@ -657,9 +650,7 @@ function executeMatchEnd(byName = null) {
         let stolenCardObj = targetUser.cards[Math.floor(Math.random() * targetUser.cards.length)];
         let stolenCardName = stolenCardObj.name;
 
-        if (conns[targetUser.peerId] && conns[targetUser.peerId].open) {
-          conns[targetUser.peerId].send({ type: 'steal_history', cardName: stolenCardName });
-        }
+        sendToTarget(targetUser.peerId, { type: 'steal_history', cardName: stolenCardName });
 
         let foundDef = historyCards.find(hc => hc.name === stolenCardName);
         if (foundDef) {
@@ -776,11 +767,9 @@ function executeMatchEnd(byName = null) {
       if (peerKeys.length > 0) {
         let targetPeerId = peerKeys[Math.floor(Math.random() * peerKeys.length)];
         let targetName = otherStates[targetPeerId]?.name || "プレイヤー";
-        if (conns[targetPeerId] && conns[targetPeerId].open) {
-          conns[targetPeerId].send({ type: 'add_card_directly', cardName: "キングデビルカード" });
-          addLog(`🐶 【黒いイケメン犬効果】${targetName} の手札に「キングデビルカード」をドローさせました！`, true, true);
-          toast(`🐶 黒いイケメン犬：発動！ ${targetName} にキングデビルカード付与！`);
-        }
+        sendToTarget(targetPeerId, { type: 'add_card_directly', cardName: "キングデビルカード" });
+        addLog(`🐶 【黒いイケメン犬効果】${targetName} の手札に「キングデビルカード」をドローさせました！`, true, true);
+        toast(`🐶 黒いイケメン犬：発動！ ${targetName} にキングデビルカード付与！`);
       } else {
         toast(`🐶 黒いイケメン犬：発動！（自分以外のプレイヤー不在）`);
       }
@@ -796,9 +785,7 @@ function executeMatchEnd(byName = null) {
 
 document.getElementById("matchEndBtn").onclick = () => {
   executeMatchEnd();
-  Object.values(conns).forEach(c => {
-    if (c && c.open) c.send({ type: 'trigger_match_end', name: document.getElementById("playerNameInput").value.trim() || "プレイヤー" });
-  });
+  sendToAll({ type: 'trigger_match_end', name: document.getElementById("playerNameInput").value.trim() || "プレイヤー" });
 };
 
 document.getElementById("confirmKillBtn").onclick = () => {
@@ -875,21 +862,14 @@ document.getElementById("confirmKillBtn").onclick = () => {
         addLog(`📜 【カクさん効果発動】失敗によりマイナス分(${absPredict}pt)の半分(${spreadPts}pt)を他プレイヤー全員から減算します！`, true, true);
         toast(`📜 カクさん：他プレイヤー全員から -${spreadPts}pt 減算`);
         Object.keys(otherStates).forEach(peerId => {
-          if (conns[peerId] && conns[peerId].open) {
-            let p = otherStates[peerId];
-            let currPts = p ? (p.points || 0) : 0;
-            conns[peerId].send({ type: 'set_points', points: currPts - spreadPts });
-          }
+          let p = otherStates[peerId];
+          let currPts = p ? (p.points || 0) : 0;
+          sendToTarget(peerId, { type: 'set_points', points: currPts - spreadPts });
         });
       }
     }
 
-    Object.keys(otherStates).forEach(peerId => {
-      if (conns[peerId] && conns[peerId].open) {
-        conns[peerId].send({ type: 'player_failed_notify', name: myName, lossPts: loss });
-      }
-    });
-
+    sendToAll({ type: 'player_failed_notify', name: myName, lossPts: loss, peerId: peer ? peer.id : 'me' });
     toast(`キル引くデス数不足により -${loss}pt！`);
   } else {
     let earned = absPredict * multiplier;
@@ -1012,24 +992,57 @@ function getMyRank(){
   return { rank, totalPlayers, isLowest };
 }
 
-let peer=null, conns={}, otherStates={};
+/* ========================================================
+   🌐 PeerJS 安定通信エンジン（ホストハブ & スターリレー構造）
+   ======================================================== */
+let peer = null;
+let conns = {};          // 自身が接続しているPeerコネクション一覧
+let otherStates = {};    // 他全プレイヤーの状態キャッシュ
+let hostConn = null;     // クライアント時のホスト接続
+let isHost = false;
 let heartbeatTimer = null;
+
+function sendToAll(data) {
+  // 自身が発行した全メッセージを全メンバーへ伝播
+  if (isHost) {
+    Object.values(conns).forEach(c => {
+      if (c && c.open) c.send(data);
+    });
+  } else if (hostConn && hostConn.open) {
+    hostConn.send({ ...data, _forwardToAll: true });
+  }
+}
+
+function sendToTarget(targetPeerId, data) {
+  if (targetPeerId === 'me' || (peer && targetPeerId === peer.id)) return;
+  if (isHost) {
+    if (conns[targetPeerId] && conns[targetPeerId].open) {
+      conns[targetPeerId].send(data);
+    }
+  } else if (hostConn && hostConn.open) {
+    hostConn.send({ ...data, _forwardTarget: targetPeerId });
+  }
+}
 
 function initPeer(customId=null){
   if(peer) leaveRoom();
+  isHost = !!customId;
   peer = customId ? new Peer(customId, { pingInterval: 5000 }) : new Peer({ pingInterval: 5000 });
+  
   peer.on('open', id => {
     if(customId){
       currentRoomCode = id.replace('spla-momo-','');
-      document.getElementById("roomStatus").textContent = `🏠 ルーム作成中 | コード: ${currentRoomCode}`;
+      document.getElementById("roomStatus").textContent = `🏠 ルーム作成完了 | コード: ${currentRoomCode}`;
       document.getElementById("leaveRoomBtn").style.display="inline-block";
       addLog("🏠 ルームを作成しました。コード: " + currentRoomCode, false);
     }
     startHeartbeat();
   });
+
   peer.on('connection', conn => {
     setupConn(conn);
   });
+
   peer.on('disconnected', () => {
     if (peer && !peer.destroyed) {
       peer.reconnect();
@@ -1041,20 +1054,324 @@ function startHeartbeat(){
   if(heartbeatTimer) clearInterval(heartbeatTimer);
   heartbeatTimer = setInterval(() => {
     if(!peer || peer.destroyed) return;
-    Object.keys(conns).forEach(pId => {
-      let conn = conns[pId];
-      if(conn && conn.open) {
-        conn.send({ type: 'ping' });
-      }
-    });
     broadcastState();
-  }, 3000);
+  }, 2500);
 }
 
-function connectToPeer(targetPeerId){
-  if(!peer || targetPeerId === peer.id || conns[targetPeerId]) return;
-  let conn = peer.connect(targetPeerId);
-  setupConn(conn);
+function setupConn(conn){
+  conn.on('open', () => {
+    conns[conn.peer] = conn;
+    if (!isHost) hostConn = conn;
+
+    // 最新状態の相互送信
+    conn.send({ type: 'update_turn', turn: turnCount });
+    broadcastState();
+  });
+
+  conn.on('data', data => {
+    if(!data || data.type === 'ping') return;
+
+    // ホストによるメッセージ中継・ルーティング
+    if (isHost) {
+      if (data._forwardToAll) {
+        delete data._forwardToAll;
+        // ホスト自身で受信処理を行なった上で、送信元以外に転送
+        handleIncomingData(data, conn.peer);
+        Object.keys(conns).forEach(pId => {
+          if (pId !== conn.peer && conns[pId] && conns[pId].open) {
+            conns[pId].send(data);
+          }
+        });
+        return;
+      }
+      if (data._forwardTarget) {
+        let target = data._forwardTarget;
+        delete data._forwardTarget;
+        if (target === peer.id) {
+          handleIncomingData(data, conn.peer);
+        } else if (conns[target] && conns[target].open) {
+          conns[target].send(data);
+        }
+        return;
+      }
+    }
+
+    handleIncomingData(data, conn.peer);
+  });
+
+  conn.on('close', () => removePeer(conn.peer));
+  conn.on('error', () => removePeer(conn.peer));
+}
+
+function removePeer(peerId) {
+  delete conns[peerId];
+  delete otherStates[peerId];
+  checkAllPredictionsConfirmed();
+  checkAllTurnOk();
+  renderOtherPlayers();
+  render();
+}
+
+function handleIncomingData(data, fromPeerId) {
+  if (data.type === 'state_update') {
+    otherStates[data.peerId] = data.state;
+    checkAllPredictionsConfirmed();
+    checkAllTurnOk();
+    renderOtherPlayers();
+    render();
+    return;
+  }
+  if(data.type === 'update_turn') {
+    setTurn(data.turn, false);
+    return;
+  }
+  if(data.type === 'trigger_match_start') {
+    executeMatchStart(data.name);
+    return;
+  }
+  if(data.type === 'trigger_match_end') {
+    executeMatchEnd(data.name);
+    return;
+  }
+  if(data.type === 'set_points') {
+    state.points = data.points;
+    save();
+    toast(`⚡ ポイントが ${data.points}pt に変更されました！`);
+    return;
+  }
+  if(data.type === 'add_card_directly') {
+    addCardByName(data.cardName);
+    toast(`手札に「${data.cardName}」が追加されました！`);
+    return;
+  }
+
+  if(data.type === 'katana_steal_request') {
+    if (checkTogenyanReflect("刀狩り")) {
+      sendToTarget(fromPeerId, { type: 'togenyan_reflected', action: 'katana' });
+    } else {
+      if (state.hand.length > 0) {
+        let chosenCardId = state.hand.splice(Math.floor(Math.random() * state.hand.length), 1)[0];
+        let stolenCard = getCard(chosenCardId);
+        save();
+        sendToTarget(fromPeerId, { type: 'katana_steal_response', cardName: stolenCard.name });
+        toast(`刀狩りにより「${stolenCard.name}」が奪われました！`);
+      } else {
+        sendToTarget(fromPeerId, { type: 'katana_steal_response', cardName: null });
+      }
+    }
+    return;
+  }
+  if(data.type === 'katana_steal_response') {
+    if (data.cardName) {
+      addCardByName(data.cardName);
+      toast(`刀狩り成功！「${data.cardName}」を奪いました！`);
+    } else {
+      toast("相手の手札がありませんでした");
+    }
+    return;
+  }
+
+  if(data.type === 'card_swap_select_request') {
+    if (checkTogenyanReflect("カード交換")) {
+      sendToTarget(fromPeerId, { type: 'togenyan_reflected', action: 'swap' });
+    } else {
+      if (state.hand.length > 0) {
+        let cardsList = state.hand.map(id => getCard(id)).filter(Boolean);
+        let cardNames = cardsList.map(c => c.name);
+        sendToTarget(fromPeerId, { type: 'card_swap_select_response', opponentCards: cardNames });
+      } else {
+        sendToTarget(fromPeerId, { type: 'card_swap_select_response', opponentCards: [] });
+      }
+    }
+    return;
+  }
+
+  if(data.type === 'card_swap_execute') {
+    let takeCardName = data.takeCardName;
+    let giveCardName = data.giveCardName;
+
+    let idx = state.hand.findIndex(id => getCard(id)?.name === takeCardName);
+    if (idx >= 0) {
+      state.hand.splice(idx, 1);
+    }
+    if (giveCardName) {
+      addCardByName(giveCardName);
+    }
+    save();
+    toast(`カード交換により「${takeCardName}」を渡し、「${giveCardName}」を受け取りました`);
+    return;
+  }
+
+  if(data.type === 'destroy_card_select_request') {
+    if (checkTogenyanReflect("破壊カード")) {
+      sendToTarget(fromPeerId, { type: 'togenyan_reflected', action: 'destroy' });
+    } else {
+      if (state.hand.length > 0) {
+        let cardsList = state.hand.map(id => getCard(id)).filter(Boolean);
+        let cardNames = cardsList.map(c => c.name);
+        sendToTarget(fromPeerId, { type: 'destroy_card_select_response', opponentCards: cardNames });
+      } else {
+        sendToTarget(fromPeerId, { type: 'destroy_card_select_response', opponentCards: [] });
+      }
+    }
+    return;
+  }
+
+  if(data.type === 'destroy_card_execute') {
+    let destroyName = data.destroyCardName;
+    let idx = state.hand.findIndex(id => getCard(id)?.name === destroyName);
+    if (idx >= 0) {
+      let desId = state.hand.splice(idx, 1)[0];
+      state.discarded.push(desId);
+      save();
+      toast(`破壊カードにより「${destroyName}」が破棄されました！`);
+      addLog(`💥 相手の破壊カードにより手札の「${destroyName}」が破棄されました。`);
+    }
+    return;
+  }
+
+  if(data.type === 'weapon_select_request') {
+    let myName = document.getElementById("playerNameInput").value.trim() || "自分";
+    if (checkTogenyanReflect("武器指定")) {
+      addLog(`🌵 『${myName}』は武器指定を跳ね返した`, true, true);
+    } else {
+      addLog(`⚔️ 『${myName}』は『${data.fromName}』に指定された`, true);
+      toast(`『${data.fromName}』に武器を指定されました！`);
+    }
+    return;
+  }
+
+  if(data.type === 'gear_select_request') {
+    let myName = document.getElementById("playerNameInput").value.trim() || "自分";
+    if (checkTogenyanReflect("ギア指定")) {
+      addLog(`🌵 『${myName}』はギア指定を跳ね返した`, true, true);
+    } else {
+      addLog(`⚙️ 『${myName}』は『${data.fromName}』に指定された`, true);
+      toast(`『${data.fromName}』にギアを指定されました！`);
+    }
+    return;
+  }
+
+  if(data.type === 'minus_2x_request') {
+    if (checkTogenyanReflect("-2倍カード")) {
+      sendToTarget(fromPeerId, { type: 'minus_2x_apply' });
+    } else {
+      minus2xNextFlag = true;
+      toast("-2倍カードの効果を受けました！");
+    }
+    return;
+  }
+  if(data.type === 'minus_2x_apply') {
+    minus2xNextFlag = true;
+    toast("トゲニャン跳ね返しにより -2倍カードの効果を受けました！");
+    return;
+  }
+
+  if(data.type === 'zero_money_request') {
+    let senderName = data.fromName || "相手";
+    if (checkTogenyanReflect("持ち金０カード")) {
+      sendToTarget(fromPeerId, { type: 'set_points', points: 0 });
+      toast("持ち金０カードを跳ね返し、相手の持ち金を0にしました！");
+    } else {
+      if (Math.random() < 0.5) {
+        state.points = 0;
+        save();
+        addLog(`💸 持ち金０カード成功！ ${senderName} の攻撃により持ち金が0になりました。`, true);
+        toast("持ち金０カード成功！持ち金が0になりました！");
+      } else {
+        addLog(`🛡️ 持ち金０カード失敗！ ${senderName} の攻撃を防ぎました。`, true);
+        toast("持ち金０カード失敗！(変化なし)");
+      }
+    }
+    return;
+  }
+
+  if(data.type === 'togenyan_reflected') {
+    toast(`相手のトゲニャンにより効果が跳ね返ってきました！`);
+    if (data.action === 'katana') {
+      promptAndStealKatana(fromPeerId);
+    } else if (data.action === 'swap') {
+      promptAndSwapCard(fromPeerId);
+    } else if (data.action === 'destroy') {
+      promptAndDestroyCard(fromPeerId);
+    }
+    return;
+  }
+
+  if(data.type === 'player_failed_notify') {
+    let myHistory = state.historyHand.map(id => getCard(id)).filter(Boolean);
+    let pandemicCard = myHistory.find(c => c.name === "パンデミック");
+    if (pandemicCard && state.historyStatus[pandemicCard.id] === "発動準備") {
+      if (data.lossPts > 0) {
+        let extraLoss = data.lossPts; 
+        addLog(`☣️ 【パンデミック発動！】 ${data.name} の失敗ペナルティを2倍にし、さらに -${extraLoss}pt を追い討ち！`, true, true);
+        toast(`☣️ パンデミック発動！ ${data.name} のマイナスを2倍化！`);
+        let targetPeer = data.peerId || fromPeerId;
+        let curr = otherStates[targetPeer]?.points || 0;
+        sendToTarget(targetPeer, { type: 'set_points', points: curr - extraLoss });
+      }
+    }
+    return;
+  }
+  if(data.type === 'steal_history') {
+    let targetName = data.cardName;
+    let targetCard = state.historyHand.map(id => getCard(id)).find(c => c && c.name === targetName);
+    if (targetCard) {
+      let idx = state.historyHand.indexOf(targetCard.id);
+      if (idx >= 0) {
+        state.historyHand.splice(idx, 1);
+        state.historyDiscarded.push(targetCard.id);
+        save();
+      }
+    }
+    return;
+  }
+  if(data.type === 'log') {
+    addLog(data.msg, false, data.isAfterEffect);
+    return;
+  }
+  if(data.type === 'history_notify') {
+    toast(`📜 ${data.name} が「${data.cardName}」を使用！ ${data.detail}`);
+    return;
+  }
+  if(data.type === 'finish_game') {
+    openAwardModal();
+    return;
+  }
+}
+
+function broadcastState(){
+  if(!peer) return;
+  let myName = document.getElementById("playerNameInput").value.trim() || "匿名プレイヤー";
+  let myWeapon = document.getElementById("weaponInput").value.trim() || "未設定";
+  let myHandCards = state.hand.map(id => getCard(id)).filter(Boolean).map(c => ({name: c.name, color: c.color}));
+  let myHistoryCards = state.historyHand.map(id => {
+    let c = getCard(id);
+    if(!c) return null;
+    let st = state.historyStatus[id] ? `【${state.historyStatus[id]}】` : '';
+    return {id: c.id, name: c.name + st, color: c.color};
+  }).filter(Boolean);
+  
+  let payload = { 
+    type: 'state_update',
+    peerId: peer.id, 
+    state: {
+      name: myName, 
+      weapon: myWeapon,
+      points: state.points, 
+      prediction: currentPrediction, 
+      isPredictionConfirmed: isPredictionConfirmed,
+      isTurnOk: isTurnOk,
+      hand: myHandCards, 
+      historyHand: myHistoryCards
+    }
+  };
+  
+  sendToAll(payload);
+}
+
+function broadcastTurn(){
+  sendToAll({ type: 'update_turn', turn: turnCount });
 }
 
 function hasTogenyan() {
@@ -1077,312 +1394,6 @@ function checkTogenyanReflect(actionName) {
     }
   }
   return false;
-}
-
-function setupConn(conn){
-  conn.on('open', () => {
-    conns[conn.peer] = conn;
-    let currentPeers = Object.keys(conns).concat([peer.id]);
-    
-    // ルーム内の全員に現在の参加者リストを送信し、全メンバー間で相互接続を自動確立（メッシュネットワーク化）
-    Object.values(conns).forEach(c => {
-      if(c && c.open) {
-        c.send({ type: 'peer_list', peers: currentPeers });
-      }
-    });
-
-    conn.send({ type: 'update_turn', turn: turnCount });
-    broadcastState();
-  });
-
-  conn.on('data', data => {
-    if(data.type === 'ping') return;
-    if(data.type === 'peer_list') {
-      (data.peers || []).forEach(pId => {
-        if(peer && pId !== peer.id && !conns[pId]){
-          connectToPeer(pId);
-        }
-      });
-      return;
-    }
-    if(data.type === 'update_turn') {
-      setTurn(data.turn, false);
-      return;
-    }
-    if(data.type === 'trigger_match_start') {
-      executeMatchStart(data.name);
-      return;
-    }
-    if(data.type === 'trigger_match_end') {
-      executeMatchEnd(data.name);
-      return;
-    }
-    if(data.type === 'set_points') {
-      state.points = data.points;
-      save();
-      toast(`⚡ ポイントが ${data.points}pt に変更されました！`);
-      return;
-    }
-    if(data.type === 'add_card_directly') {
-      addCardByName(data.cardName);
-      toast(`手札に「${data.cardName}」が追加されました！`);
-      return;
-    }
-
-    if(data.type === 'katana_steal_request') {
-      if (checkTogenyanReflect("刀狩り")) {
-        conn.send({ type: 'togenyan_reflected', action: 'katana' });
-      } else {
-        if (state.hand.length > 0) {
-          let chosenCardId = state.hand.splice(Math.floor(Math.random() * state.hand.length), 1)[0];
-          let stolenCard = getCard(chosenCardId);
-          save();
-          conn.send({ type: 'katana_steal_response', cardName: stolenCard.name });
-          toast(`刀狩りにより「${stolenCard.name}」が奪われました！`);
-        } else {
-          conn.send({ type: 'katana_steal_response', cardName: null });
-        }
-      }
-      return;
-    }
-    if(data.type === 'katana_steal_response') {
-      if (data.cardName) {
-        addCardByName(data.cardName);
-        toast(`刀狩り成功！「${data.cardName}」を奪いました！`);
-      } else {
-        toast("相手の手札がありませんでした");
-      }
-      return;
-    }
-
-    if(data.type === 'card_swap_select_request') {
-      if (checkTogenyanReflect("カード交換")) {
-        conn.send({ type: 'togenyan_reflected', action: 'swap' });
-      } else {
-        if (state.hand.length > 0) {
-          let cardsList = state.hand.map(id => getCard(id)).filter(Boolean);
-          let cardNames = cardsList.map(c => c.name);
-          conn.send({ type: 'card_swap_select_response', opponentCards: cardNames });
-        } else {
-          conn.send({ type: 'card_swap_select_response', opponentCards: [] });
-        }
-      }
-      return;
-    }
-
-    if(data.type === 'card_swap_execute') {
-      let takeCardName = data.takeCardName;
-      let giveCardName = data.giveCardName;
-
-      let idx = state.hand.findIndex(id => getCard(id)?.name === takeCardName);
-      if (idx >= 0) {
-        state.hand.splice(idx, 1);
-      }
-      if (giveCardName) {
-        addCardByName(giveCardName);
-      }
-      save();
-      toast(`カード交換により「${takeCardName}」を渡し、「${giveCardName}」を受け取りました`);
-      return;
-    }
-
-    if(data.type === 'destroy_card_select_request') {
-      if (checkTogenyanReflect("破壊カード")) {
-        conn.send({ type: 'togenyan_reflected', action: 'destroy' });
-      } else {
-        if (state.hand.length > 0) {
-          let cardsList = state.hand.map(id => getCard(id)).filter(Boolean);
-          let cardNames = cardsList.map(c => c.name);
-          conn.send({ type: 'destroy_card_select_response', opponentCards: cardNames });
-        } else {
-          conn.send({ type: 'destroy_card_select_response', opponentCards: [] });
-        }
-      }
-      return;
-    }
-
-    if(data.type === 'destroy_card_execute') {
-      let destroyName = data.destroyCardName;
-      let idx = state.hand.findIndex(id => getCard(id)?.name === destroyName);
-      if (idx >= 0) {
-        let desId = state.hand.splice(idx, 1)[0];
-        state.discarded.push(desId);
-        save();
-        toast(`破壊カードにより「${destroyName}」が破棄されました！`);
-        addLog(`💥 相手の破壊カードにより手札の「${destroyName}」が破棄されました。`);
-      }
-      return;
-    }
-
-    if(data.type === 'weapon_select_request') {
-      let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-      if (checkTogenyanReflect("武器指定")) {
-        addLog(`🌵 『${myName}』は武器指定を跳ね返した`, true, true);
-      } else {
-        addLog(`⚔️ 『${myName}』は『${data.fromName}』に指定された`, true);
-        toast(`『${data.fromName}』に武器を指定されました！`);
-      }
-      return;
-    }
-
-    if(data.type === 'gear_select_request') {
-      let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-      if (checkTogenyanReflect("ギア指定")) {
-        addLog(`🌵 『${myName}』はギア指定を跳ね返した`, true, true);
-      } else {
-        addLog(`⚙️ 『${myName}』は『${data.fromName}』に指定された`, true);
-        toast(`『${data.fromName}』にギアを指定されました！`);
-      }
-      return;
-    }
-
-    if(data.type === 'minus_2x_request') {
-      if (checkTogenyanReflect("-2倍カード")) {
-        conn.send({ type: 'minus_2x_apply' });
-      } else {
-        minus2xNextFlag = true;
-        toast("-2倍カードの効果を受けました！");
-      }
-      return;
-    }
-    if(data.type === 'minus_2x_apply') {
-      minus2xNextFlag = true;
-      toast("トゲニャン跳ね返しにより -2倍カードの効果を受けました！");
-      return;
-    }
-
-    if(data.type === 'zero_money_request') {
-      let senderName = data.fromName || "相手";
-      if (checkTogenyanReflect("持ち金０カード")) {
-        conn.send({ type: 'set_points', points: 0 });
-        toast("持ち金０カードを跳ね返し、相手の持ち金を0にしました！");
-      } else {
-        if (Math.random() < 0.5) {
-          state.points = 0;
-          save();
-          addLog(`💸 持ち金０カード成功！ ${senderName} の攻撃により持ち金が0になりました。`, true);
-          toast("持ち金０カード成功！持ち金が0になりました！");
-        } else {
-          addLog(`🛡️ 持ち金０カード失敗！ ${senderName} の攻撃を防ぎました。`, true);
-          toast("持ち金０カード失敗！(変化なし)");
-        }
-      }
-      return;
-    }
-
-    if(data.type === 'togenyan_reflected') {
-      toast(`相手のトゲニャンにより効果が跳ね返ってきました！`);
-      if (data.action === 'katana') {
-        promptAndStealKatana(conn.peer);
-      } else if (data.action === 'swap') {
-        promptAndSwapCard(conn.peer);
-      } else if (data.action === 'destroy') {
-        promptAndDestroyCard(conn.peer);
-      }
-      return;
-    }
-
-    if(data.type === 'player_failed_notify') {
-      let myHistory = state.historyHand.map(id => getCard(id)).filter(Boolean);
-      let pandemicCard = myHistory.find(c => c.name === "パンデミック");
-      if (pandemicCard && state.historyStatus[pandemicCard.id] === "発動準備") {
-        if (data.lossPts > 0) {
-          let extraLoss = data.lossPts; 
-          addLog(`☣️ 【パンデミック発動！】 ${data.name} の失敗ペナルティを2倍にし、さらに -${extraLoss}pt を追い討ち！`, true, true);
-          toast(`☣️ パンデミック発動！ ${data.name} のマイナスを2倍化！`);
-          if (conns[conn.peer] && conns[conn.peer].open) {
-            let curr = otherStates[conn.peer]?.points || 0;
-            conns[conn.peer].send({ type: 'set_points', points: curr - extraLoss });
-          }
-        }
-      }
-      return;
-    }
-    if(data.type === 'steal_history') {
-      let targetName = data.cardName;
-      let targetCard = state.historyHand.map(id => getCard(id)).find(c => c && c.name === targetName);
-      if (targetCard) {
-        let idx = state.historyHand.indexOf(targetCard.id);
-        if (idx >= 0) {
-          state.historyHand.splice(idx, 1);
-          state.historyDiscarded.push(targetCard.id);
-          save();
-        }
-      }
-      return;
-    }
-    if(data.type === 'log') {
-      addLog(data.msg, false, data.isAfterEffect);
-      return;
-    }
-    if(data.type === 'history_notify') {
-      toast(`📜 ${data.name} が「${data.cardName}」を使用！ ${data.detail}`);
-      return;
-    }
-    if(data.type === 'finish_game') {
-      openAwardModal();
-      return;
-    }
-    
-    otherStates[conn.peer] = data;
-    checkAllPredictionsConfirmed();
-    checkAllTurnOk();
-    renderOtherPlayers();
-    render();
-  });
-
-  conn.on('close', () => {
-    delete conns[conn.peer];
-    delete otherStates[conn.peer];
-    checkAllPredictionsConfirmed();
-    checkAllTurnOk();
-    renderOtherPlayers();
-    render();
-  });
-
-  conn.on('error', () => {
-    delete conns[conn.peer];
-    delete otherStates[conn.peer];
-    checkAllPredictionsConfirmed();
-    checkAllTurnOk();
-    renderOtherPlayers();
-    render();
-  });
-}
-
-function broadcastState(){
-  if(!peer) return;
-  let myName = document.getElementById("playerNameInput").value.trim() || "匿名プレイヤー";
-  let myWeapon = document.getElementById("weaponInput").value.trim() || "未設定";
-  let myHandCards = state.hand.map(id => getCard(id)).filter(Boolean).map(c => ({name: c.name, color: c.color}));
-  let myHistoryCards = state.historyHand.map(id => {
-    let c = getCard(id);
-    if(!c) return null;
-    let st = state.historyStatus[id] ? `【${state.historyStatus[id]}】` : '';
-    return {id: c.id, name: c.name + st, color: c.color};
-  }).filter(Boolean);
-  
-  let payload = { 
-    peerId: peer.id, 
-    name: myName, 
-    weapon: myWeapon,
-    points: state.points, 
-    prediction: currentPrediction, 
-    isPredictionConfirmed: isPredictionConfirmed,
-    isTurnOk: isTurnOk,
-    hand: myHandCards, 
-    historyHand: myHistoryCards
-  };
-  
-  Object.values(conns).forEach(c => {
-    if(c && c.open) c.send(payload);
-  });
-}
-
-function broadcastTurn(){
-  Object.values(conns).forEach(c => {
-    if(c && c.open) c.send({ type: 'update_turn', turn: turnCount });
-  });
 }
 
 function setTurn(newTurn, shouldBroadcast = true) {
@@ -1475,15 +1486,13 @@ function setTurn(newTurn, shouldBroadcast = true) {
       if (peerKeys.length > 0) {
         let targetPeerId = peerKeys[Math.floor(Math.random() * peerKeys.length)];
         let targetName = otherStates[targetPeerId]?.name || "プレイヤー";
-        if (conns[targetPeerId] && conns[targetPeerId].open) {
-          conns[targetPeerId].send({ type: 'set_points', points: state.points });
-          addLog(`🌀 【クーパー9ターン目強制発動】${targetName} のポイントを自分と同じ(${state.points}pt)に統一しました！`, true, true);
-          toast(`🌀 クーパー(9ターン終了)：${targetName} のポイントを強制統一！`);
-          let cIdx = state.historyHand.indexOf(cooperCard.id);
-          if (cIdx >= 0) {
-            state.historyHand.splice(cIdx, 1);
-            state.historyDiscarded.push(cooperCard.id);
-          }
+        sendToTarget(targetPeerId, { type: 'set_points', points: state.points });
+        addLog(`🌀 【クーパー9ターン目強制発動】${targetName} のポイントを自分と同じ(${state.points}pt)に統一しました！`, true, true);
+        toast(`🌀 クーパー(9ターン終了)：${targetName} のポイントを強制統一！`);
+        let cIdx = state.historyHand.indexOf(cooperCard.id);
+        if (cIdx >= 0) {
+          state.historyHand.splice(cIdx, 1);
+          state.historyDiscarded.push(cooperCard.id);
         }
       }
     }
@@ -1532,6 +1541,8 @@ function leaveRoom(){
   Object.values(conns).forEach(c => { if(c) c.close(); });
   conns = {};
   otherStates = {};
+  hostConn = null;
+  isHost = false;
   if(peer){ peer.destroy(); peer = null; }
   currentRoomCode = "";
   document.getElementById("roomStatus").textContent = "未接続（ソロモード）";
@@ -1551,9 +1562,11 @@ document.getElementById("joinRoomBtn").onclick = () => {
   if(!code){ toast("コードを入力してください"); return; }
   leaveRoom();
   currentRoomCode = code;
+  isHost = false;
   peer = new Peer({ pingInterval: 5000 });
   peer.on('open', () => {
-    connectToPeer('spla-momo-' + code);
+    let conn = peer.connect('spla-momo-' + code);
+    setupConn(conn);
     document.getElementById("roomStatus").textContent = `✅ ルームに参加中 (${code})`;
     document.getElementById("leaveRoomBtn").style.display="inline-block";
     let myName = document.getElementById("playerNameInput").value.trim() || "新プレイヤー";
@@ -1575,8 +1588,9 @@ document.addEventListener("visibilitychange", () => {
     if (peer && peer.disconnected && !peer.destroyed) {
       peer.reconnect();
     }
-    if (currentRoomCode && Object.keys(conns).length === 0) {
-      connectToPeer('spla-momo-' + currentRoomCode);
+    if (!isHost && hostConn && !hostConn.open) {
+      let conn = peer.connect('spla-momo-' + currentRoomCode);
+      setupConn(conn);
     }
     broadcastState();
   }
@@ -1671,9 +1685,7 @@ function selectPeerDialog(promptText) {
 }
 
 function promptAndStealKatana(targetPeerId) {
-  if (conns[targetPeerId] && conns[targetPeerId].open) {
-    conns[targetPeerId].send({ type: 'katana_steal_request' });
-  }
+  sendToTarget(targetPeerId, { type: 'katana_steal_request' });
 }
 
 function promptAndSwapCard(targetPeerId) {
@@ -1692,82 +1704,13 @@ function promptAndSwapCard(targetPeerId) {
   }
   let giveCard = myHandCards[selMyIdx];
 
-  if (conns[targetPeerId] && conns[targetPeerId].open) {
-    let conn = conns[targetPeerId];
-    
-    let handler = (data) => {
-      if (data.type === 'card_swap_select_response') {
-        conn.off('data', handler);
-        let oppCards = data.opponentCards || [];
-        if (oppCards.length === 0) {
-          toast("相手の手札がありませんでした");
-          return;
-        }
-
-        let oppOptions = oppCards.map((cName, idx) => `${idx + 1}: ${cName}`).join("\n");
-        let oppInput = prompt(`奪う相手のカードを選んでください:\n${oppOptions}`);
-        let selOppIdx = parseInt(oppInput, 10) - 1;
-        if (isNaN(selOppIdx) || selOppIdx < 0 || selOppIdx >= oppCards.length) {
-          toast("有効なカードを選択してください");
-          return;
-        }
-        let takeCardName = oppCards[selOppIdx];
-
-        let hIdx = state.hand.indexOf(giveCard.id);
-        if (hIdx >= 0) state.hand.splice(hIdx, 1);
-        addCardByName(takeCardName);
-        save();
-
-        conn.send({ 
-          type: 'card_swap_execute', 
-          takeCardName: takeCardName, 
-          giveCardName: giveCard.name 
-        });
-
-        toast(`交換成功！「${takeCardName}」を獲得し、「${giveCard.name}」を渡しました`);
-      }
-    };
-
-    conn.on('data', handler);
-    conn.send({ type: 'card_swap_select_request' });
-  }
+  sendToTarget(targetPeerId, { type: 'card_swap_select_request' });
+  toast("相手の手札カード選択を要求中...");
 }
 
 function promptAndDestroyCard(targetPeerId) {
-  if (conns[targetPeerId] && conns[targetPeerId].open) {
-    let conn = conns[targetPeerId];
-    
-    let handler = (data) => {
-      if (data.type === 'destroy_card_select_response') {
-        conn.off('data', handler);
-        let oppCards = data.opponentCards || [];
-        if (oppCards.length === 0) {
-          toast("相手の手札がありませんでした");
-          return;
-        }
-
-        let oppOptions = oppCards.map((cName, idx) => `${idx + 1}: ${cName}`).join("\n");
-        let oppInput = prompt(`破棄させる相手のカードを選んでください:\n${oppOptions}`);
-        let selOppIdx = parseInt(oppInput, 10) - 1;
-        if (isNaN(selOppIdx) || selOppIdx < 0 || selOppIdx >= oppCards.length) {
-          toast("有効なカードを選択してください");
-          return;
-        }
-        let destroyCardName = oppCards[selOppIdx];
-
-        conn.send({ 
-          type: 'destroy_card_execute', 
-          destroyCardName: destroyCardName 
-        });
-
-        toast(`相手の「${destroyCardName}」を破壊しました！`);
-        addLog(`💥 相手の手札の「${destroyCardName}」を破棄させました。`);
-      }
-    };
-
-    conn.on('data', handler);
-    conn.send({ type: 'destroy_card_select_request' });
-  }
+  sendToTarget(targetPeerId, { type: 'destroy_card_select_request' });
+  toast("相手の手札カード選択を要求中...");
 }
 
 function openShredderModal() {
@@ -1835,9 +1778,7 @@ function openAwardModal() {
 
 document.getElementById("finishGameBtn").onclick = () => {
   if (confirm("ゲームを終了して結果発表を行ないますか？")) {
-    Object.values(conns).forEach(c => {
-      if (c && c.open) c.send({ type: 'finish_game' });
-    });
+    sendToAll({ type: 'finish_game' });
     openAwardModal();
   }
 };
@@ -1965,9 +1906,7 @@ function handleNormalCardUse(card) {
   else if (card.name === "-2倍カード") {
     let targetPeerId = selectPeerDialog("-2倍カードを使う相手を選んでください:");
     if (!targetPeerId) return false;
-    if (conns[targetPeerId] && conns[targetPeerId].open) {
-      conns[targetPeerId].send({ type: 'minus_2x_request' });
-    }
+    sendToTarget(targetPeerId, { type: 'minus_2x_request' });
     toast("相手に-2倍カードを使用しました");
   }
   else if (card.name === "破壊カード") {
@@ -1980,25 +1919,19 @@ function handleNormalCardUse(card) {
     if (!targetPeerId) return false;
     let targetName = otherStates[targetPeerId]?.name || "プレイヤー";
     addLog(`⚔️ 『${targetName}』は『${myName}』に指定された`, true);
-    if (conns[targetPeerId] && conns[targetPeerId].open) {
-      conns[targetPeerId].send({ type: 'weapon_select_request', fromName: myName });
-    }
+    sendToTarget(targetPeerId, { type: 'weapon_select_request', fromName: myName });
   }
   else if (card.name === "ギア指定カード") {
     let targetPeerId = selectPeerDialog("ギア指定する相手を選んでください:");
     if (!targetPeerId) return false;
     let targetName = otherStates[targetPeerId]?.name || "プレイヤー";
     addLog(`⚙️ 『${targetName}』は『${myName}』に指定された`, true);
-    if (conns[targetPeerId] && conns[targetPeerId].open) {
-      conns[targetPeerId].send({ type: 'gear_select_request', fromName: myName });
-    }
+    sendToTarget(targetPeerId, { type: 'gear_select_request', fromName: myName });
   }
   else if (card.name === "持ち金０カード") {
     let targetPeerId = selectPeerDialog("持ち金０カードを使う相手を選んでください:");
     if (!targetPeerId) return false;
-    if (conns[targetPeerId] && conns[targetPeerId].open) {
-      conns[targetPeerId].send({ type: 'zero_money_request', fromName: myName });
-    }
+    sendToTarget(targetPeerId, { type: 'zero_money_request', fromName: myName });
   }
   else if (card.name === "とっかえっこカード") {
     if (state.points < 0) {
@@ -2012,9 +1945,7 @@ function handleNormalCardUse(card) {
 
     let myOldPts = state.points;
     state.points = targetPoints;
-    if (conns[targetPeerId] && conns[targetPeerId].open) {
-      conns[targetPeerId].send({ type: 'set_points', points: myOldPts });
-    }
+    sendToTarget(targetPeerId, { type: 'set_points', points: myOldPts });
     addLog(`🃏 【とっかえっこカード】 ${myName}(${myOldPts}pt) と ${targetName}(${targetPoints}pt) の持ち点を入れ替えました！`);
     toast(`${targetName} と持ち点を入れ替えました！`);
   } 
@@ -2034,453 +1965,364 @@ function handleNormalCardUse(card) {
       [ptsPool[i], ptsPool[j]] = [ptsPool[j], ptsPool[i]];
     }
     allPlayers.forEach((p, idx) => {
-      let assignedPts = ptsPool[idx];
       if (p.peerId === 'me') {
-        state.points = assignedPts;
-      } else if (conns[p.peerId] && conns[p.peerId].open) {
-        conns[p.peerId].send({ type: 'set_points', points: assignedPts });
+        state.points = ptsPool[idx];
+      } else {
+        sendToTarget(p.peerId, { type: 'set_points', points: ptsPool[idx] });
       }
     });
-    addLog(`🃏 【シャッフルカード】 全員の持ち点がランダムに入れ替わりました！`);
-    toast("全員の持ち点がシャッフルされました！");
-  } 
+    addLog(`🔀 【シャッフルカード】 全員の持ち点がシャッフルされました！`);
+    toast("全員の持ち点をシャッフルしました！");
+  }
   else if (card.name === "徳政令カード") {
-    if (state.points < 0) state.points = 0;
+    let allPlayers = [{ peerId: 'me', points: state.points }];
     Object.keys(otherStates).forEach(k => {
-      if ((otherStates[k].points || 0) < 0 && conns[k] && conns[k].open) {
-        conns[k].send({ type: 'set_points', points: 0 });
+      allPlayers.push({ peerId: k, points: otherStates[k].points || 0 });
+    });
+    allPlayers.forEach(p => {
+      if (p.points < 0) {
+        if (p.peerId === 'me') {
+          state.points = 0;
+        } else {
+          sendToTarget(p.peerId, { type: 'set_points', points: 0 });
+        }
       }
     });
-    addLog(`🃏 【徳政令カード】 マイナスの持ち点を持つプレイヤーの持ち点が0になりました！`);
-    toast("マイナスの人の持ち点が0になりました！");
-  } 
+    addLog(`📜 【徳政令カード】 マイナス持ち点のプレイヤーは全員0に救済されました！`);
+    toast("マイナスポイントの人を0に復帰させました！");
+  }
   else if (card.name === "たいらのまさカード") {
     let allPlayers = [{ peerId: 'me', points: state.points }];
     Object.keys(otherStates).forEach(k => {
       allPlayers.push({ peerId: k, points: otherStates[k].points || 0 });
     });
-    let total = allPlayers.reduce((sum, p) => sum + p.points, 0);
-    let avg = Math.floor(total / allPlayers.length);
-    state.points = avg;
-    Object.keys(otherStates).forEach(k => {
-      if (conns[k] && conns[k].open) {
-        conns[k].send({ type: 'set_points', points: avg });
+    let totalPts = allPlayers.reduce((sum, p) => sum + p.points, 0);
+    let avgPts = Math.floor(totalPts / allPlayers.length);
+    allPlayers.forEach(p => {
+      if (p.peerId === 'me') {
+        state.points = avgPts;
+      } else {
+        sendToTarget(p.peerId, { type: 'set_points', points: avgPts });
       }
     });
-    addLog(`🃏 【たいらのまさカード】 全員の持ち点を合計(${total}pt)して均等分配(${avg}pt)しました！`);
-    toast(`全員の持ち点が ${avg}pt に平均化されました！`);
-  } 
-  else {
-    addLog(`🃏 ${myName} が「${card.name}」を使用しました。`);
-    toast("「" + card.name + "」を使用しました");
+    addLog(`⚖️ 【たいらのまさカード】 全員の持ち点を平均化(${avgPts}pt)しました！`);
+    toast(`全員の持ち点を ${avgPts}pt に均等分配しました！`);
   }
-
   return true;
 }
 
-function handleHistoryAction(card){
+function handleHistoryCardUse(card) {
   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
 
-  if(card.name === "かわらばやし"){
-    if(!isTurnOk) {
-      toast("かわらばやしは「このターンok」を押した解放時のみ発動可能です！");
-      return;
-    }
-    executeKawarabayashi(card.id);
-  } else if(card.name === "クーパー"){
-    let keys = Object.keys(otherStates);
-    if(!keys.length){
-      toast("クーパー：ルーム内に自分以外のプレイヤーがいません");
-      return;
-    }
-    let targetPeerId = keys[Math.floor(Math.random() * keys.length)];
-    let targetName = otherStates[targetPeerId]?.name || "プレイヤー";
-    
-    let conn = conns[targetPeerId];
-    if(conn && conn.open){
-      conn.send({ type: 'set_points', points: state.points });
-      broadcastHistoryUse("クーパー", `${targetName} のポイントを自分と同じ(${state.points}pt)に変更！`, true);
-      toast(`クーパー発動！ ${targetName} のポイントを自分と同じ(${state.points}pt)にしました！`);
-      
-      let cIdx = state.historyHand.indexOf(card.id);
-      if (cIdx >= 0) {
-        state.historyHand.splice(cIdx, 1);
-        state.historyDiscarded.push(card.id);
-      }
-    } else {
-      toast("通信エラー：対象のプレイヤーへ送信できませんでした");
+  if (card.name === "かわらばやし") {
+    let options = [1, 3, 5];
+    let earned = options[Math.floor(Math.random() * options.length)];
+    state.points += earned;
+    broadcastHistoryUse("かわらばやし", `ランダムポイント抽選で +${earned}pt を獲得！`);
+    toast(`かわらばやし：+${earned}pt 獲得！`);
+  }
+  else if (card.name === "クーパー") {
+    let targetPeerId = selectPeerDialog("自身と同じ合計ポイントにするプレイヤーを選択:");
+    if (!targetPeerId) return false;
+    let targetName = otherStates[targetPeerId].name || 'プレイヤー';
+    sendToTarget(targetPeerId, { type: 'set_points', points: state.points });
+    broadcastHistoryUse("クーパー", `${targetName} のポイントを自分と同じ (${state.points}pt) に変更！`);
+    toast(`${targetName} のポイントを同期しました！`);
+  }
+  else {
+    toast(`「${card.name}」のパッシブ効果はターンの自動処理で発動します`);
+    return false;
+  }
+  return true;
+}
+
+function useCard(id) {
+  if (isTurnOk) {
+    toast("このターンのOKを出しているためカード操作はできません");
+    return;
+  }
+
+  let idx = state.hand.indexOf(id);
+  if(idx < 0) return;
+  let c = getCard(id);
+  if(!c) return;
+
+  let success = handleNormalCardUse(c);
+  if (success !== false) {
+    state.hand.splice(idx,1);
+    state.used.push(id);
+    let myName = document.getElementById("playerNameInput").value.trim() || "自分";
+    addLog(`🃏 ${myName} が 「${c.name}」 を使用しました。`);
+    save();
+  }
+}
+
+function useHistoryCard(id) {
+  if (isTurnOk) {
+    toast("このターンのOKを出しているためカード操作はできません");
+    return;
+  }
+
+  let idx = state.historyHand.indexOf(id);
+  if(idx < 0) return;
+  let c = getCard(id);
+  if(!c) return;
+
+  let success = handleHistoryCardUse(c);
+  if (success !== false) {
+    state.historyHand.splice(idx,1);
+    state.historyDiscarded.push(id);
+    delete state.historyStatus[id];
+    save();
+  }
+}
+
+function discardCard(id){
+  if (isTurnOk) {
+    toast("このターンのOKを出しているためカード操作はできません");
+    return;
+  }
+
+  let idx = state.hand.indexOf(id);
+  if(idx<0) return;
+  let c = getCard(id);
+  state.hand.splice(idx,1);
+  state.discarded.push(id);
+  let myName = document.getElementById("playerNameInput").value.trim() || "自分";
+  addLog(`🗑️ ${myName} が 「${c.name}」 を手動破棄しました。`);
+  save();
+}
+
+function discardHistoryCard(id){
+  if (isTurnOk) {
+    toast("このターンのOKを出しているためカード操作はできません");
+    return;
+  }
+
+  let idx = state.historyHand.indexOf(id);
+  if(idx<0) return;
+  let c = getCard(id);
+  state.historyHand.splice(idx,1);
+  state.historyDiscarded.push(id);
+  delete state.historyStatus[id];
+  let myName = document.getElementById("playerNameInput").value.trim() || "自分";
+  addLog(`🗑️ ${myName} が 「${c.name}」 を手動破棄しました。`);
+  save();
+}
+
+function drawCard(){
+  if (isTurnOk) {
+    toast("このターンのOKを出しているためドローできません");
+    return;
+  }
+
+  if(state.deck.length===0){toast("山札がありません。リセットしてください。");return;}
+  let i=Math.floor(Math.random()*state.deck.length);
+  let id=state.deck.splice(i,1)[0];
+  state.hand.push(id);
+  let c=getCard(id);
+
+  if (c && c.name === "かわらばやし" && c.color === "紫") {
+    state.points = 0;
+    addLog(`💥 【かわらばやし：クビ！】 引いてしまったため所持ポイントが0になりました！`, true, true);
+    toast("💥 かわらばやし：クビ！ 所持ポイントが0になりました！");
+    let hIdx = state.hand.indexOf(id);
+    if (hIdx >= 0) {
+      state.hand.splice(hIdx, 1);
+      state.discarded.push(id);
     }
     save();
-  } else {
-    broadcastHistoryUse(card.name, "の効果を発動！");
-    toast("歴史ヒーロー「" + card.name + "」を発動しました");
+    return;
   }
-}
 
-function executeKawarabayashi(cardId) {
-  const pool = [
-    ...Array(10).fill(1),
-    ...Array(8).fill(3),
-    ...Array(3).fill(5),
-    ...Array(1).fill("クビ")
-  ];
-  
-  const result = pool[Math.floor(Math.random() * pool.length)];
+  let myName = document.getElementById("playerNameInput").value.trim() || "自分";
+  addLog(`🎴 ${myName} が山札からカードを1枚引きました。`);
 
-  if (result === "クビ") {
-    state.points = 0;
-    delete state.historyStatus[cardId];
-    let idx = state.historyHand.indexOf(cardId);
-    if (idx >= 0) {
-      state.historyHand.splice(idx, 1);
-      state.historyDiscarded.push(cardId);
+  if (c && c.name === "スリの銀次") {
+    let r = Math.floor(Math.random() * 3);
+    if (r === 0) {
+      state.points = Math.floor(state.points / 2);
+      addLog(`🚨 『${myName}』がスリのギンジにあった（所持ポイントが半分になった！）`, true, true);
+    } else if (r === 1) {
+      state.points = Math.floor(state.points / 3);
+      addLog(`🚨 『${myName}』がスリのギンジにあった（所持ポイントが1/3になった！）`, true, true);
+    } else {
+      state.points = Math.floor(state.points / 4);
+      addLog(`🚨 『${myName}』がスリのギンジにあった（所持ポイントが1/4になった！）`, true, true);
     }
-    broadcastHistoryUse("かわらばやし", "【クビ】が出ました！ポイントが0になり消滅！", true);
-    toast("💥 かわらばやし：【クビ】が出ました！ポイントが0になり、かわらばやしが消滅しました");
-  } else {
-    state.points += result;
-    broadcastHistoryUse("かわらばやし", `【${result}pt】を獲得！ (+${result}pt)`);
-    toast(`🎲 かわらばやし：【${result}pt】を獲得！ (+${result}pt)`);
   }
+
   save();
+  toast(c ? `「${c.name}」を引きました` : "カードを引きました");
 }
 
-function swapHistoryCard(targetHistoryId) {
+function drawHistoryCard(){
   if (isTurnOk) {
-    toast("このターンOKを出している間はカードの交換はできません");
-    return;
-  }
-  if (state.points < 10) {
-    toast("ポイントが足りません（10pt以上が必要）");
-    return;
-  }
-  if (!state.hand.length) {
-    toast("交換するための通常手札がありません");
-    return;
-  }
-  if (!state.historyDeck.length) {
-    toast("引き直す歴史ヒーローの山札がありません");
+    toast("このターンのOKを出しているためドローできません");
     return;
   }
 
-  let oldCard = getCard(targetHistoryId);
+  if(state.points < 10) {
+    toast("歴史ヒーローを引くには10pt必要です！");
+    return;
+  }
+  if(state.historyDeck.length===0){
+    toast("歴史ヒーローの山札がありません。リセットしてください。");
+    return;
+  }
+
   state.points -= 10;
-  delete state.historyStatus[targetHistoryId];
-  let hIdx = state.historyHand.indexOf(targetHistoryId);
-  if (hIdx >= 0) {
-    state.historyHand.splice(hIdx, 1);
-    state.historyDiscarded.push(targetHistoryId);
-  }
+  let i=Math.floor(Math.random()*state.historyDeck.length);
+  let id=state.historyDeck.splice(i,1)[0];
+  
+  let c=getCard(id);
+  let myName = document.getElementById("playerNameInput").value.trim() || "自分";
 
-  let randIndex = Math.floor(Math.random() * state.hand.length);
-  let discardedId = state.hand.splice(randIndex, 1)[0];
-  state.discarded.push(discardedId);
-
-  let newHIndex = Math.floor(Math.random() * state.historyDeck.length);
-  let newHistoryId = state.historyDeck.splice(newHIndex, 1)[0];
-  state.historyHand.push(newHistoryId);
-  let newHistoryCard = getCard(newHistoryId);
-
-  save();
-  broadcastHistoryUse(oldCard?.name || "歴史ヒーロー", `を交換し、新しく「${newHistoryCard?.name || '歴史ヒーロー'}」を獲得！ (-10pt)`);
-  toast(`🔄 交換完了！「${oldCard?.name || '歴史ヒーロー'}」を破棄し、「${newHistoryCard?.name || '新歴史ヒーロー'}」を獲得！ (-10pt)`);
-}
-
-function cardEl(c, isHistory=false){
- let el=document.createElement("div");el.className="card";
- 
- let isPredictingPhase = !isMatchStarted && !document.getElementById("predictConfirmBtn").disabled;
- let canUseCard = (isPredictingPhase || isKillConfirmed) && !isTurnOk;
-
- let buttonsHtml = "";
- if(isHistory){
-   if(c.name === "かわらばやし" || c.name === "クーパー"){
-     buttonsHtml += `<button class="small action" ${(!canUseCard && !isTurnOk) || (c.name === "かわらばやし" && !isTurnOk) ? 'disabled' : ''}>使用する</button>`;
-   }
-   buttonsHtml += `<button class="swap-btn swap" ${isTurnOk ? 'disabled' : ''}>交換(-10pt)</button>`;
-   buttonsHtml += `<button class="small discard" ${isTurnOk ? 'disabled' : ''}>捨てる(-10pt)</button>`;
- } else {
-   if (c.color !== "黒") {
-     buttonsHtml += `<button class="small action" ${!canUseCard ? 'disabled' : ''}>使用</button>`;
-     if (c.color !== "白" && c.color !== "緑") {
-       buttonsHtml += `<button class="small discard" ${isTurnOk ? 'disabled' : ''}>捨てる</button>`;
-     }
-   }
- }
-
- let displayName = c.name;
- if(isHistory && state.historyStatus[c.id]) {
-   displayName += `【${state.historyStatus[c.id]}】`;
- }
-
- el.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(displayName)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div></div><div class="card-actions">${buttonsHtml}</div>`;
- 
- let actionBtn = el.querySelector(".action");
- if(actionBtn){
-   actionBtn.onclick=()=>{
-     if(isTurnOk && c.name !== "かわらばやし"){
-       toast("「このターンok」を押している間はカードはロックされています");
-       return;
-     }
-     if(!canUseCard && c.name !== "かわらばやし"){
-       toast("カードは予想値入力時かキル引くデス数確定後でのみ使用できます");
-       return;
-     }
-     if(isHistory){
-       handleHistoryAction(c);
-     } else {
-       let success = handleNormalCardUse(c);
-       if (success !== false) {
-         let i=state.hand.indexOf(c.id);
-         if(i>=0) state.hand.splice(i,1);
-         state.used.push(c.id);
-         save();
-       }
-     }
-   };
- }
-
- if(isHistory){
-   let swapBtn = el.querySelector(".swap");
-   if(swapBtn){
-     swapBtn.onclick=()=>{ swapHistoryCard(c.id); };
-   }
- }
-
- let discardBtn = el.querySelector(".discard");
- if(discardBtn){
-   discardBtn.onclick=()=>{
-     if (isTurnOk) {
-       toast("「このターンok」を押している間は操作できません");
-       return;
-     }
-     let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-     if(isHistory){
-       if (state.points < 10) {
-         toast("ポイントが足りません（10pt以上が必要）");
-         return;
-       }
-       state.points -= 10;
-       delete state.historyStatus[c.id];
-       let i=state.historyHand.indexOf(c.id);
-       if(i>=0) {
-         state.historyHand.splice(i,1);
-         state.historyDiscarded.push(c.id);
-       }
-       broadcastHistoryUse(c.name, "を捨てました (-10pt)");
-       toast("歴史ヒーローを捨てました (-10pt)");
-     } else {
-       let i=state.hand.indexOf(c.id);
-       if(i>=0) state.hand.splice(i,1);
-       state.discarded.push(c.id);
-       delete sibariTurnCounts[c.id];
-       addLog(`🗑️ ${myName} が「${c.name}」を破棄しました。`);
-       toast("カードを捨てました");
-     }
-     save();
-   };
- }
-
- return el;
-}
-
-function renderDeckList(){
-  let container=document.getElementById("deckView");container.innerHTML="";
-  if(!state.deck.length){
-    container.innerHTML='<div class="empty">山札にカードが残っていません。</div>';
+  if (c && c.name === "かわらばやし") {
+    state.points = 0;
+    addLog(`💥 【かわらばやし：クビ！】 引いてしまったため所持ポイントが0になりました！`, true, true);
+    toast("💥 かわらばやし：クビ！ 所持ポイントが0になりました！");
+    state.historyDiscarded.push(id);
+    save();
     return;
   }
-  let counts={};
-  state.deck.forEach(id=>{counts[id]=(counts[id]||0)+1;});
+
+  state.historyHand.push(id);
+  addLog(`📜 ${myName} が10ptを消費して歴史ヒーロー「${c?.name || 'カード'}」を獲得しました！`);
+  save();
+  toast(c ? `歴史ヒーロー「${c.name}」を獲得！` : "歴史ヒーローを獲得！");
+}
+
+function resetDeckMain(){
+  if(!confirm("山札・手札・使用済み・破棄を全てリセットして山札に戻しますか？")) return;
+  let deck=[]; cards.forEach(c=>{for(let i=0;i<c.copies;i++)deck.push(c.id)});
+  state.deck=deck; state.hand=[]; state.used=[]; state.discarded=[];
+  sibariTurnCounts = {};
+  save(); toast("通常山札をリセットしました");
+}
+
+function resetHistoryDeck(){
+  if(!confirm("歴史ヒーローの山札・所持カード・破棄を全てリセットして山札に戻しますか？")) return;
+  let historyDeck=[]; historyCards.forEach(c=>{for(let i=0;i<c.copies;i++)historyDeck.push(c.id)});
+  state.historyDeck=historyDeck; state.historyHand=[]; state.historyDiscarded=[]; state.historyStatus={};
+  horiPoints = 1; horiWakeStreak = 0;
+  save(); toast("歴史ヒーロー山札をリセットしました");
+}
+
+function changePoints(delta){
+  state.points += delta;
+  save();
+}
+
+function resetAllGameData() {
+  let deck=[]; cards.forEach(c=>{for(let i=0;i<c.copies;i++)deck.push(c.id)});
+  let historyDeck=[]; historyCards.forEach(c=>{for(let i=0;i<c.copies;i++)historyDeck.push(c.id)});
   
-  Object.keys(counts).forEach(id=>{
-    let c=getCard(id); if(!c) return;
-    let count=counts[id];
-    let el=document.createElement("div");el.className="card";
-    el.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div><div class="copies">山札の残り：${count}枚</div></div>`;
+  state.deck = deck;
+  state.historyDeck = historyDeck;
+  state.hand = [];
+  state.historyHand = [];
+  state.used = [];
+  state.discarded = [];
+  state.historyDiscarded = [];
+  state.points = 0;
+  state.historyStatus = {};
+  
+  sibariTurnCounts = {};
+  horiPoints = 1;
+  horiWakeStreak = 0;
+  senzaiBonusValue = 0;
+  doubleNextFlag = false;
+  linearNextFlag = false;
+  minus2xNextFlag = false;
+  hecharaNextFlag = false;
+
+  setTurn(1, true);
+  save();
+  toast("全てのデータを完全初期化しました");
+}
+
+document.getElementById("resetAllBtn").onclick = () => {
+  if (confirm("全てのゲームデータ（ポイント、手札、歴史ヒーロー、ターン数）を完全に初期化しますか？")) {
+    resetAllGameData();
+    let myName = document.getElementById("playerNameInput").value.trim() || "プレイヤー";
+    addLog(`💥 ${myName} が全員のゲームデータを完全初期化しました。`);
+  }
+};
+
+document.getElementById("drawBtn").onclick=drawCard;
+document.getElementById("drawHistoryBtn").onclick=drawHistoryCard;
+document.getElementById("resetDeckMainBtn").onclick=resetDeckMain;
+document.getElementById("resetHistoryDeckBtn").onclick=resetHistoryDeck;
+document.getElementById("resetPoints").onclick=()=>{if(confirm("ポイントを0に戻しますか？")) {state.points=0; save(); toast("ポイントを0に戻しました");}};
+
+function renderDeckView(){
+  let container = document.getElementById("deckView");
+  container.innerHTML = "";
+  let counts = {};
+  state.deck.forEach(id => counts[id] = (counts[id] || 0) + 1);
+  let uniqueIds = Array.from(new Set(state.deck));
+  if(uniqueIds.length === 0){ container.innerHTML = '<div class="empty">山札は空です</div>'; return; }
+  uniqueIds.forEach(id => {
+    let c = getCard(id); if(!c) return;
+    let el = document.createElement("div"); el.className = "card";
+    el.innerHTML = `<div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${c.color}</span></div><div class="card-desc">${esc(c.desc)}</div><div class="copies">山札内の残り枚数: ${counts[id]}枚</div>`;
     container.appendChild(el);
   });
 }
 
-function renderHistoryDeckList(){
-  let container=document.getElementById("historyDeckView");
-  if(!container) return;
-  container.innerHTML="";
-  if(!state.historyDeck.length){
-    container.innerHTML='<div class="empty">歴史ヒーローの山札にカードが残っていません。</div>';
-    return;
-  }
-  let counts={};
-  state.historyDeck.forEach(id=>{counts[id]=(counts[id]||0)+1;});
-  
-  Object.keys(counts).forEach(id=>{
-    let c=getCard(id); if(!c) return;
-    let count=counts[id];
-    let el=document.createElement("div");el.className="card";
-    el.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div><div class="copies">山札の残り：${count}枚</div></div>`;
+function renderHistoryDeckView(){
+  let container = document.getElementById("historyDeckView");
+  container.innerHTML = "";
+  let counts = {};
+  state.historyDeck.forEach(id => counts[id] = (counts[id] || 0) + 1);
+  let uniqueIds = Array.from(new Set(state.historyDeck));
+  if(uniqueIds.length === 0){ container.innerHTML = '<div class="empty">歴史ヒーローの山札は空です</div>'; return; }
+  uniqueIds.forEach(id => {
+    let c = getCard(id); if(!c) return;
+    let el = document.createElement("div"); el.className = "card";
+    el.innerHTML = `<div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${c.color}</span></div><div class="card-desc">${esc(c.desc)}</div><div class="copies">山札内の残り枚数: ${counts[id]}枚</div>`;
     container.appendChild(el);
   });
 }
 
 function render(){
- document.getElementById("pointsValue").textContent=state.points;
- document.getElementById("handCount").textContent=state.hand.length;
- document.getElementById("deckCount").textContent=state.deck.length;
- document.getElementById("usedCount").textContent=state.used.length;
- document.getElementById("discardedCount").textContent=state.discarded.length;
- document.getElementById("historyDeckCount").textContent=state.historyDeck.length;
+  document.getElementById("pointsValue").textContent = state.points;
+  document.getElementById("handCount").textContent = state.hand.length;
+  document.getElementById("deckCount").textContent = state.deck.length;
+  document.getElementById("usedCount").textContent = state.used.length;
+  document.getElementById("discardedCount").textContent = state.discarded.length;
+  document.getElementById("historyDeckCount").textContent = state.historyDeck.length;
 
- let { rank } = getMyRank();
- document.getElementById("myRankDisplay").textContent = rank + "位";
+  let { rank } = getMyRank();
+  document.getElementById("myRankDisplay").textContent = `${rank}位`;
 
- let hand=document.getElementById("hand");hand.innerHTML="";
- if(state.hand.length===0){
-   hand.innerHTML='<div class="empty">手札はありません。</div>';
- }else{
-   state.hand.forEach(id=>{let c=getCard(id);if(c)hand.appendChild(cardEl(c,false))});
- }
+  let handEl=document.getElementById("hand"); handEl.innerHTML="";
+  if(state.hand.length===0) handEl.innerHTML='<div class="empty">手札はありません</div>';
+  state.hand.forEach(id=>{
+    let c=getCard(id); if(!c) return;
+    let isLocked = isTurnOk;
+    let div=document.createElement("div"); div.className="card";
+    div.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${c.color}</span></div><div class="card-desc">${esc(c.desc)}</div></div><div class="card-actions"><button class="primary" onclick="useCard('${c.id}')" ${isLocked ? 'disabled' : ''}>使う</button><button class="danger" onclick="discardCard('${c.id}')" ${isLocked ? 'disabled' : ''}>捨てる</button></div>`;
+    handEl.appendChild(div);
+  });
 
- let hHand=document.getElementById("historyHand");
- if(hHand){
-   hHand.innerHTML="";
-   if(state.historyHand.length===0){
-     hHand.innerHTML='<div class="empty">所持している歴史ヒーローはありません。</div>';
-   }else{
-     state.historyHand.forEach(id=>{let c=getCard(id);if(c)hHand.appendChild(cardEl(c,true))});
-   }
- }
+  let hHandEl=document.getElementById("historyHand"); hHandEl.innerHTML="";
+  if(state.historyHand.length===0) hHandEl.innerHTML='<div class="empty">所持している歴史ヒーローはありません</div>';
+  state.historyHand.forEach(id=>{
+    let c=getCard(id); if(!c) return;
+    let isLocked = isTurnOk;
+    let stText = state.historyStatus[id] ? ` <span class="badge purple">${state.historyStatus[id]}</span>` : '';
+    let div=document.createElement("div"); div.className="card";
+    div.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${c.color}</span>${stText}</div><div class="card-desc">${esc(c.desc)}</div></div><div class="card-actions"><button class="primary" onclick="useHistoryCard('${c.id}')" ${isLocked ? 'disabled' : ''}>効果発動</button><button class="danger" onclick="discardHistoryCard('${c.id}')" ${isLocked ? 'disabled' : ''}>捨てる</button></div>`;
+    hHandEl.appendChild(div);
+  });
 
- renderDeckList();
- renderHistoryDeckList();
- renderOtherPlayers();
+  renderDeckView();
+  renderHistoryDeckView();
 }
-
-function changePoints(delta){
- state.points += delta;
- save();
-}
-
-document.getElementById("drawBtn").onclick=()=>{
- if(isTurnOk) { toast("「このターンok」を押している間は引けません"); return; }
- if(!state.deck.length){toast("山札が空です。リセットしてください。");return}
- let i=Math.floor(Math.random()*state.deck.length);
- let id=state.deck.splice(i,1)[0];
- state.hand.push(id);
- let drawnCard = getCard(id);
- if (drawnCard && drawnCard.name === "スリの銀次") {
-   let r = Math.floor(Math.random() * 3);
-   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-   if (r === 0) {
-     state.points = Math.floor(state.points / 2);
-     addLog(`🚨 『${myName}』がスリのギンジにあった（所持ポイントが半分になった！）`, true, true);
-   } else if (r === 1) {
-     state.points = Math.floor(state.points / 3);
-     addLog(`🚨 『${myName}』がスリのギンジにあった（所持ポイントが1/3になった！）`, true, true);
-   } else {
-     state.points = Math.floor(state.points / 4);
-     addLog(`🚨 『${myName}』がスリのギンジにあった（所持ポイントが1/4になった！）`, true, true);
-   }
- }
- save();
- toast("カードを引きました！");
-};
-
-document.getElementById("drawHistoryBtn").onclick=()=>{
- if(isTurnOk) { toast("「このターンok」を押している間は引けません"); return; }
- if(state.points < 10) { toast("ポイントが足りません（10pt以上が必要）"); return; }
- if(!state.historyDeck.length){toast("歴史ヒーローの山札が空です。リセットしてください。");return}
- 
- state.points -= 10;
- let i=Math.floor(Math.random()*state.historyDeck.length);
- let id=state.historyDeck.splice(i,1)[0];
- state.historyHand.push(id);
- save();
- 
- let drawn = getCard(id);
- broadcastHistoryUse(drawn?.name || "歴史ヒーロー", "をドローしました！ (-10pt)");
- toast("歴史ヒーローをドローしました！ (-10pt)");
-};
-
-function resetDeckOnly(){
- let allCards=[...state.hand,...state.used,...state.discarded];
- state.hand=[]; state.used=[]; state.discarded=[];
- state.deck.push(...allCards);
- sibariTurnCounts = {};
- save();
- toast("山札をリセットしました（手札・使用済み・破棄を山札へ）");
-}
-
-document.getElementById("resetDeckMainBtn").onclick=resetDeckOnly;
-
-document.getElementById("resetHistoryDeckBtn").onclick=()=>{
- let allHistory=[...state.historyHand,...state.historyDiscarded];
- state.historyHand=[]; state.historyDiscarded=[];
- state.historyDeck.push(...allHistory);
- state.historyStatus = {};
- save();
- toast("歴史ヒーローをリセットしました（捨て札を含め山札へ）");
-};
-
-function resetAllGameData() {
- state = makeInitial();
- turnCount = 1;
- currentPrediction = null;
- isPredictionConfirmed = false;
- isMatchStarted = false;
- isTurnOk = false;
- isKillConfirmed = false;
- doubleNextFlag = false;
- linearNextFlag = false;
- minus2xNextFlag = false;
- hecharaNextFlag = false;
- senzaiBonusValue = 0;
- sibariTurnCounts = {};
- horiPoints = 1;
- horiWakeStreak = 0;
- abdullahBlock = false;
-
- document.getElementById("currentTurnVal").textContent = 1;
- document.getElementById("predictInput").value = "";
- document.getElementById("predictInput").disabled = false;
- document.getElementById("predictConfirmBtn").disabled = false;
-
- document.getElementById("weaponInput").value = "";
- document.getElementById("weaponInput").disabled = false;
- document.getElementById("weaponShuffleBtn").disabled = false;
-
- document.getElementById("turnEndBtn").disabled = true;
- document.getElementById("turnOkBtn").disabled = true;
- document.getElementById("turnOkBtn").classList.remove("active");
- document.getElementById("turnOkBtn").textContent = "このターンok";
-
- document.getElementById("matchStartBtn").disabled = true;
- document.getElementById("matchStartBtn").textContent = "▶ 試合開始（全員の予想確定待ち）";
- document.getElementById("matchEndBtn").disabled = true;
-
- document.getElementById("killInput").value = "0";
- document.getElementById("killInput").disabled = true;
- document.getElementById("confirmKillBtn").disabled = true;
-
- clearLogUI();
- save();
- setTurn(1, true);
- toast("全てを一括リセットしました");
-}
-
-document.getElementById("resetAllBtn").onclick=()=>{
- if(confirm("ポイント・手札・歴史ヒーロー・ターン数を完全に初期化しますか？")){
-   resetAllGameData();
- }
-};
-
-document.getElementById("resetPoints").onclick=()=>{
- state.points=0;
- save();
- toast("ポイントを0にリセットしました");
-};
 
 render();
-checkDrawConditions();
 </script>
 </body>
 </html>
