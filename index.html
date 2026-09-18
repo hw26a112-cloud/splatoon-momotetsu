@@ -1083,7 +1083,14 @@ function setupConn(conn){
   conn.on('open', () => {
     conns[conn.peer] = conn;
     let currentPeers = Object.keys(conns).concat([peer.id]);
-    conn.send({ type: 'peer_list', peers: currentPeers });
+    
+    // 全員に現在のピアリストを拡散して全相互接続を確立
+    Object.values(conns).forEach(c => {
+      if(c && c.open) {
+        c.send({ type: 'peer_list', peers: currentPeers });
+      }
+    });
+
     conn.send({ type: 'update_turn', turn: turnCount });
     broadcastState();
   });
@@ -1092,7 +1099,7 @@ function setupConn(conn){
     if(data.type === 'ping') return;
     if(data.type === 'peer_list') {
       (data.peers || []).forEach(pId => {
-        if(pId !== peer.id && !conns[pId]){
+        if(peer && pId !== peer.id && !conns[pId]){
           connectToPeer(pId);
         }
       });
@@ -1164,7 +1171,6 @@ function setupConn(conn){
     }
 
     if(data.type === 'card_swap_execute') {
-      let myName = document.getElementById("playerNameInput").value.trim() || "相手";
       let takeCardName = data.takeCardName;
       let giveCardName = data.giveCardName;
 
@@ -2440,42 +2446,31 @@ function resetAllGameData() {
  document.getElementById("weaponInput").value = "";
  document.getElementById("weaponInput").disabled = false;
  document.getElementById("weaponShuffleBtn").disabled = false;
-
- document.getElementById("killInput").value = "0";
  document.getElementById("killInput").disabled = true;
  document.getElementById("confirmKillBtn").disabled = true;
-
+ document.getElementById("matchEndBtn").disabled = true;
  document.getElementById("matchStartBtn").disabled = true;
  document.getElementById("matchStartBtn").textContent = "▶ 試合開始（全員の予想確定待ち）";
- document.getElementById("matchEndBtn").disabled = true;
-
- let turnOkBtn = document.getElementById("turnOkBtn");
- turnOkBtn.classList.remove("active");
- turnOkBtn.textContent = "このターンok";
- turnOkBtn.disabled = true;
-
- document.getElementById("turnEndBtn").disabled = true;
+ document.getElementById("killInput").value = "0";
 
  save();
- checkDrawConditions();
- addLog("💥 全てを一括リセットしました。");
+ broadcastTurn();
  toast("全てを一括リセットしました");
 }
 
-document.getElementById("resetAllBtn").onclick=()=>{
- if(confirm("ポイント・全手札・歴史ヒーロー・ターン数を全て初期状態に戻しますか？")){
-   resetAllGameData();
- }
+document.getElementById("resetAllBtn").onclick = () => {
+  if (confirm("本当に全てのゲームデータ（ポイント・手札・歴史ヒーロー・ターン数など）を初期化しますか？")) {
+    resetAllGameData();
+  }
 };
 
-document.getElementById("resetPoints").onclick=()=>{
- state.points=0;
- save();
- toast("ポイントを0に戻しました");
+document.getElementById("resetPoints").onclick = () => {
+  state.points = 0;
+  save();
+  toast("ポイントを0に戻しました");
 };
 
 render();
-checkDrawConditions();
 </script>
 </body>
 </html>
