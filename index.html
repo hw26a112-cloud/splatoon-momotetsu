@@ -262,7 +262,7 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
 </div><div id="toast" class="toast"></div>
 
 <script>
-const KEY="splatoon_momotetsu_card_manager_v27";
+const KEY="splatoon_momotetsu_card_manager_v28";
 
 const splatoonWeapons = [
   "ボールドマーカー", "ボールドマーカーネオ", "シャープマーカー", "シャープマーカーネオ",
@@ -1048,7 +1048,7 @@ function startHeartbeat(){
       }
     });
     broadcastState();
-  }, 4000);
+  }, 3000);
 }
 
 function connectToPeer(targetPeerId){
@@ -1084,7 +1084,7 @@ function setupConn(conn){
     conns[conn.peer] = conn;
     let currentPeers = Object.keys(conns).concat([peer.id]);
     
-    // 全員に現在のピアリストを拡散して全相互接続を確立
+    // ルーム内の全員に現在の参加者リストを送信し、全メンバー間で相互接続を自動確立（メッシュネットワーク化）
     Object.values(conns).forEach(c => {
       if(c && c.open) {
         c.send({ type: 'peer_list', peers: currentPeers });
@@ -2443,34 +2443,44 @@ function resetAllGameData() {
  document.getElementById("predictInput").value = "";
  document.getElementById("predictInput").disabled = false;
  document.getElementById("predictConfirmBtn").disabled = false;
+
  document.getElementById("weaponInput").value = "";
  document.getElementById("weaponInput").disabled = false;
  document.getElementById("weaponShuffleBtn").disabled = false;
- document.getElementById("killInput").disabled = true;
- document.getElementById("confirmKillBtn").disabled = true;
- document.getElementById("matchEndBtn").disabled = true;
+
+ document.getElementById("turnEndBtn").disabled = true;
+ document.getElementById("turnOkBtn").disabled = true;
+ document.getElementById("turnOkBtn").classList.remove("active");
+ document.getElementById("turnOkBtn").textContent = "このターンok";
+
  document.getElementById("matchStartBtn").disabled = true;
  document.getElementById("matchStartBtn").textContent = "▶ 試合開始（全員の予想確定待ち）";
- document.getElementById("killInput").value = "0";
+ document.getElementById("matchEndBtn").disabled = true;
 
+ document.getElementById("killInput").value = "0";
+ document.getElementById("killInput").disabled = true;
+ document.getElementById("confirmKillBtn").disabled = true;
+
+ clearLogUI();
  save();
- broadcastTurn();
+ setTurn(1, true);
  toast("全てを一括リセットしました");
 }
 
-document.getElementById("resetAllBtn").onclick = () => {
-  if (confirm("本当に全てのゲームデータ（ポイント・手札・歴史ヒーロー・ターン数など）を初期化しますか？")) {
-    resetAllGameData();
-  }
+document.getElementById("resetAllBtn").onclick=()=>{
+ if(confirm("ポイント・手札・歴史ヒーロー・ターン数を完全に初期化しますか？")){
+   resetAllGameData();
+ }
 };
 
-document.getElementById("resetPoints").onclick = () => {
-  state.points = 0;
-  save();
-  toast("ポイントを0に戻しました");
+document.getElementById("resetPoints").onclick=()=>{
+ state.points=0;
+ save();
+ toast("ポイントを0にリセットしました");
 };
 
 render();
+checkDrawConditions();
 </script>
 </body>
 </html>
