@@ -43,7 +43,7 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
 
 .room-box{display:flex;flex-direction:column;gap:12px}
 .room-inputs{display:flex;gap:8px}
-.room-status-bar{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.room-status-bar{display:flex;justify-content:space-between;align-items:center;margin-top:8px;flex-wrap:wrap;gap:8px}
 .room-status{font-weight:700;color:var(--accent);font-size:15px}
 .turn-control-box{background:var(--panel2);border:1px solid var(--border);border-radius:16px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
 .turn-display{font-size:22px;font-weight:900;color:var(--gold)}
@@ -60,11 +60,12 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
 .btn-match-end{background:#dc2626}
 
 .predict-box{background:var(--panel2);border:1px solid var(--border);border-radius:16px;padding:14px;margin-top:10px;display:flex;flex-direction:column;gap:12px}
+.input-col{display:flex;flex-direction:column;gap:6px}
 .input-row{display:flex;align-items:center;gap:10px}
 .input-row label{font-size:14px;font-weight:800;width:120px;color:var(--muted)}
 .input-row input{flex:1;background:var(--bg);border:1px solid var(--border);color:#fff;padding:10px 12px;border-radius:10px;font-size:16px;font-weight:800}
 .input-row input:disabled{opacity:0.5;background:#181c24;cursor:not-allowed}
-.predict-confirm-btn{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:800;font-size:14px;cursor:pointer;white-space:nowrap;}
+.predict-confirm-btn{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:800;font-size:14px;cursor:pointer;white-space:nowrap;width:100%;}
 .predict-confirm-btn:disabled{opacity:0.5;cursor:not-allowed;background:#444;}
 .confirm-kill-btn{background:var(--gold);color:#000;border:0;border-radius:10px;padding:10px;font-weight:900;font-size:14px;cursor:pointer;width:100%}
 .confirm-kill-btn:disabled{opacity:0.5;cursor:not-allowed;background:#555;color:#888}
@@ -97,7 +98,17 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
   color: #fbbf24;
 }
 
-.overlay-lock{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.8);z-index:999;display:none;flex-direction:column;justify-content:center;align-items:center;color:#fff;padding:20px;text-align:center}
+.overlay-lock{position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.85);z-index:999;display:none;flex-direction:column;justify-content:center;align-items:center;color:#fff;padding:20px;text-align:center}
+
+/* 表彰式用スタイル */
+.award-container {background:var(--panel);border:2px solid var(--gold);border-radius:24px;padding:24px;width:100%;max-width:500px;box-shadow:0 0 30px rgba(245,158,11,0.3)}
+.award-title {font-size:28px;font-weight:900;color:var(--gold);margin-bottom:16px;text-shadow:0 2px 4px rgba(0,0,0,0.5)}
+.award-list {display:flex;flex-direction:column;gap:10px;margin:20px 0}
+.award-item {background:var(--panel2);border:1px solid var(--border);border-radius:14px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+.award-item.rank-1 {border-color:var(--gold);background:rgba(245,158,11,0.1)}
+.award-rank {font-size:20px;font-weight:900;width:50px;text-align:left}
+.award-name {font-size:18px;font-weight:800;flex:1;text-align:left}
+.award-pts {font-size:20px;font-weight:900;color:var(--gold)}
 </style>
 </head>
 <body>
@@ -105,6 +116,15 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
   <h2>✂️ シュレッダーカード実行中</h2>
   <p>破棄する手札カードを選択してください。（選択するまで他の操作はできません）</p>
   <div id="shredderCardList" class="cards" style="max-width:600px;width:100%;margin-top:20px;"></div>
+</div>
+
+<!-- 表彰式モーダル -->
+<div id="awardOverlay" class="overlay-lock">
+  <div class="award-container">
+    <div class="award-title">🏆 最終結果発表 🏆</div>
+    <div id="awardList" class="award-list"></div>
+    <button class="reset-all-btn" id="awardResetBtn" style="margin-top:10px;">✨ 結果を確認して全リセット</button>
+  </div>
 </div>
 
 <div class="app">
@@ -132,16 +152,21 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
     </div>
 
     <div class="predict-box">
-      <!-- 使用武器欄 -->
-      <div class="input-row">
-        <label for="weaponInput">⚔️ 使用武器</label>
-        <input type="text" id="weaponInput" placeholder="武器名を入力">
+      <!-- 使用武器欄 ＆ シャッフルボタン -->
+      <div class="input-col">
+        <div class="input-row">
+          <label for="weaponInput">⚔️ 使用武器</label>
+          <input type="text" id="weaponInput" placeholder="武器名を入力">
+        </div>
         <button type="button" class="predict-confirm-btn" id="weaponShuffleBtn" style="background:var(--gold);color:#000;">🎲 シャッフル</button>
       </div>
 
-      <div class="input-row">
-        <label for="predictInput">🎯 予想数値</label>
-        <input type="number" id="predictInput" placeholder="数値を入力">
+      <!-- 予想数値欄 ＆ 予想確定ボタン -->
+      <div class="input-col">
+        <div class="input-row">
+          <label for="predictInput">🎯 予想数値</label>
+          <input type="number" id="predictInput" placeholder="数値を入力">
+        </div>
         <button type="button" class="predict-confirm-btn" id="predictConfirmBtn">予想確定</button>
       </div>
 
@@ -159,7 +184,10 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
 
     <div class="room-status-bar">
       <div id="roomStatus" class="room-status">未接続（ソロモード）</div>
-      <button class="danger" id="leaveRoomBtn" style="display:none;">退室する</button>
+      <div>
+        <button class="danger" id="finishGameBtn" style="background:#dc2626;font-weight:800;margin-right:4px;">🏁 ゲームを終了</button>
+        <button class="danger" id="leaveRoomBtn" style="display:none;">退室する</button>
+      </div>
     </div>
   </div>
 </section>
@@ -1297,6 +1325,10 @@ function setupConn(conn){
       toast(`📜 ${data.name} が「${data.cardName}」を使用！ ${data.detail}`);
       return;
     }
+    if(data.type === 'finish_game') {
+      openAwardModal();
+      return;
+    }
     
     otherStates[conn.peer] = data;
     checkAllPredictionsConfirmed();
@@ -1798,6 +1830,56 @@ function openShredderModal() {
   });
 }
 
+// 表彰式モーダル表示
+function openAwardModal() {
+  let all = [{ 
+    name: document.getElementById("playerNameInput").value.trim() || "自分", 
+    points: state.points 
+  }];
+  
+  Object.keys(otherStates).forEach(k => {
+    let p = otherStates[k];
+    all.push({ 
+      name: p.name || "プレイヤー", 
+      points: p.points || 0 
+    });
+  });
+
+  all.sort((a, b) => b.points - a.points);
+
+  let listEl = document.getElementById("awardList");
+  listEl.innerHTML = "";
+
+  all.forEach((p, idx) => {
+    let rank = idx + 1;
+    let medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : " ";
+    let item = document.createElement("div");
+    item.className = `award-item ${rank === 1 ? 'rank-1' : ''}`;
+    item.innerHTML = `
+      <div class="award-rank">${medal}${rank}位</div>
+      <div class="award-name">${esc(p.name)}</div>
+      <div class="award-pts">${p.points} pt</div>
+    `;
+    listEl.appendChild(item);
+  });
+
+  document.getElementById("awardOverlay").style.display = "flex";
+}
+
+document.getElementById("finishGameBtn").onclick = () => {
+  if (confirm("ゲームを終了して結果発表を行ないますか？")) {
+    Object.values(conns).forEach(c => {
+      if (c && c.open) c.send({ type: 'finish_game' });
+    });
+    openAwardModal();
+  }
+};
+
+document.getElementById("awardResetBtn").onclick = () => {
+  document.getElementById("awardOverlay").style.display = "none";
+  resetAllGameData();
+};
+
 function handleNormalCardUse(card) {
   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
 
@@ -2283,58 +2365,50 @@ function renderHistoryDeckList(){
 
 function render(){
  document.getElementById("pointsValue").textContent=state.points;
- document.getElementById("handCount").textContent=state.hand.length + state.historyHand.length;
+ document.getElementById("handCount").textContent=state.hand.length;
  document.getElementById("deckCount").textContent=state.deck.length;
  document.getElementById("usedCount").textContent=state.used.length;
- document.getElementById("discardedCount").textContent=(state.discarded||[]).length;
+ document.getElementById("discardedCount").textContent=state.discarded.length;
  document.getElementById("historyDeckCount").textContent=state.historyDeck.length;
 
- // このターンOKが押されている時はリセット系やドロー系ボタンもロック
- document.getElementById("drawBtn").disabled = isTurnOk;
- document.getElementById("drawHistoryBtn").disabled = isTurnOk;
- document.getElementById("resetDeckMainBtn").disabled = isTurnOk;
- document.getElementById("resetHistoryDeckBtn").disabled = isTurnOk;
- 
  let { rank } = getMyRank();
- document.getElementById("myRankDisplay").textContent = `${rank}位`;
+ document.getElementById("myRankDisplay").textContent = rank + "位";
 
- let h=document.getElementById("hand");h.innerHTML="";
- if(!state.hand.length)h.innerHTML='<div class="empty">まだカードがありません。山札から引いてください。</div>';
- state.hand.forEach(id=>{let c=getCard(id);if(c)h.appendChild(cardEl(c,false))});
+ let hand=document.getElementById("hand");hand.innerHTML="";
+ if(state.hand.length===0){
+   hand.innerHTML='<div class="empty">手札はありません。</div>';
+ }else{
+   state.hand.forEach(id=>{let c=getCard(id);if(c)hand.appendChild(cardEl(c,false))});
+ }
 
- let hh=document.getElementById("historyHand");hh.innerHTML="";
- if(!state.historyHand.length)hh.innerHTML='<div class="empty">歴史ヒーローを所持していません。</div>';
- state.historyHand.forEach(id=>{let c=getCard(id);if(c)hh.appendChild(cardEl(c,true))});
+ let hHand=document.getElementById("historyHand");
+ if(hHand){
+   hHand.innerHTML="";
+   if(state.historyHand.length===0){
+     hHand.innerHTML='<div class="empty">所持している歴史ヒーローはありません。</div>';
+   }else{
+     state.historyHand.forEach(id=>{let c=getCard(id);if(c)hHand.appendChild(cardEl(c,true))});
+   }
+ }
 
  renderDeckList();
  renderHistoryDeckList();
  renderOtherPlayers();
- checkDrawConditions();
 }
 
-function resetDeckAll(){
- state.deck=[]; state.hand=[]; state.used=[]; state.discarded=[]; sibariTurnCounts={};
- state.cards.forEach(c=>{for(let i=0;i<c.copies;i++)state.deck.push(c.id)});
+function changePoints(delta){
+ state.points += delta;
  save();
- toast("山札をリセットしました");
-}
-
-function resetHistoryDeckAll(){
- state.historyDeck=[]; state.historyHand=[]; state.historyDiscarded=[]; state.historyStatus={};
- horiPoints = 1;
- horiWakeStreak = 0;
- state.historyCards.forEach(c=>{for(let i=0;i<c.copies;i++)state.historyDeck.push(c.id)});
- save();
- toast("歴史ヒーローをリセットしました");
 }
 
 document.getElementById("drawBtn").onclick=()=>{
- if(document.getElementById("drawBtn").disabled) return;
- if(!state.deck.length){toast("山札がありません");return}
- let i=Math.floor(Math.random()*state.deck.length),id=state.deck.splice(i,1)[0];state.hand.push(id);
- 
- let c = getCard(id);
- if (c && c.name === "スリの銀次") {
+ if(isTurnOk) { toast("「このターンok」を押している間は引けません"); return; }
+ if(!state.deck.length){toast("山札が空です。リセットしてください。");return}
+ let i=Math.floor(Math.random()*state.deck.length);
+ let id=state.deck.splice(i,1)[0];
+ state.hand.push(id);
+ let drawnCard = getCard(id);
+ if (drawnCard && drawnCard.name === "スリの銀次") {
    let r = Math.floor(Math.random() * 3);
    let myName = document.getElementById("playerNameInput").value.trim() || "自分";
    if (r === 0) {
@@ -2348,82 +2422,124 @@ document.getElementById("drawBtn").onclick=()=>{
      addLog(`🚨 『${myName}』がスリのギンジにあった（所持ポイントが1/4になった！）`, true, true);
    }
  }
-
- save();
  let myName = document.getElementById("playerNameInput").value.trim() || "自分";
- addLog(`🎴 ${myName} が山札から「${c?.name||"カード"}」を引きました。`);
- toast("「"+(c?.name||"カード")+"」を引きました！")
+ addLog(`🎴 ${myName} が山札から「${drawnCard?.name || 'カード'}」を引きました。`);
+ toast("「" + (drawnCard?.name || "カード") + "」を引きました！");
+ save();
 };
 
 document.getElementById("drawHistoryBtn").onclick=()=>{
- if(document.getElementById("drawHistoryBtn").disabled) return;
- if(state.points < 10){
-   toast("ポイントが足りません（10pt以上が必要）");
-   return;
- }
- if(!state.historyDeck.length){toast("歴史ヒーローの山札がありません");return}
- 
+ if(isTurnOk) { toast("「このターンok」を押している間は引けません"); return; }
+ if(state.points < 10) { toast("ポイントが足りません（10pt必要です）"); return; }
+ if(!state.historyDeck.length){ toast("歴史ヒーローの山札が空です。"); return; }
+
  state.points -= 10;
- let i=Math.floor(Math.random()*state.historyDeck.length),id=state.historyDeck.splice(i,1)[0];
+ let i=Math.floor(Math.random()*state.historyDeck.length);
+ let id=state.historyDeck.splice(i,1)[0];
  state.historyHand.push(id);
-
  let drawnCard = getCard(id);
- if (drawnCard && drawnCard.name === "堀大輔") {
-   state.historyStatus[id] = `堀pt:1`;
+
+ if (drawnCard && drawnCard.name === "かわらばやし") {
+   delete state.historyStatus[drawnCard.id];
  }
 
- save();
  let myName = document.getElementById("playerNameInput").value.trim() || "自分";
- addLog(`📜 ${myName} が 10pt を消費して歴史ヒーロー「${drawnCard?.name||"カード"}」を獲得！`);
- toast("📜 歴史ヒーロー「"+(drawnCard?.name||"カード")+"」を獲得！ (-10pt)")
+ addLog(`📜 ${myName} が歴史ヒーロー「${drawnCard?.name || 'カード'}」を獲得しました！(-10pt)`);
+ toast("歴史ヒーロー「" + (drawnCard?.name || "カード") + "」を獲得！(-10pt)");
+ save();
 };
 
 document.getElementById("resetDeckMainBtn").onclick=()=>{
- if (isTurnOk) { toast("「このターンok」を押している間は操作できません"); return; }
- if(confirm("手札・使用済み・破棄のカードをすべて戻し、山札を初期状態に戻しますか？")){ 
-   resetDeckAll(); 
-   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-   addLog(`🔄 ${myName} が山札を全リセットしました。`);
- }
+ if(!confirm("山札をリセットしますか？（手札・使用済み・破棄カードが全て山札に戻ります）"))return;
+ let allIds=[];
+ state.hand.forEach(id=>allIds.push(id));
+ state.used.forEach(id=>allIds.push(id));
+ state.discarded.forEach(id=>allIds.push(id));
+ state.deck.forEach(id=>allIds.push(id));
+ state.deck=allIds;
+ state.hand=[];
+ state.used=[];
+ state.discarded=[];
+ sibariTurnCounts = {};
+ save();
+ toast("通常カードの山札をリセットしました");
 };
 
 document.getElementById("resetHistoryDeckBtn").onclick=()=>{
- if (isTurnOk) { toast("「このターンok」を押している間は操作できません"); return; }
- if(confirm("所持・破棄した歴史ヒーローを全てリセットし、初期状態の山札に戻しますか？")){ 
-   resetHistoryDeckAll(); 
-   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-   addLog(`🔄 ${myName} が歴史ヒーローを全リセットしました。`);
- }
-};
-
-function changePoints(delta){
- state.points += delta;
+ if(!confirm("歴史ヒーローをリセットしますか？（所持・破棄カードが全て山札に戻ります）"))return;
+ let allIds=[];
+ state.historyHand.forEach(id=>allIds.push(id));
+ state.historyDiscarded.forEach(id=>allIds.push(id));
+ state.historyDeck.forEach(id=>allIds.push(id));
+ state.historyDeck=allIds;
+ state.historyHand=[];
+ state.historyDiscarded=[];
+ state.historyStatus={};
  save();
-}
+ toast("歴史ヒーローの山札をリセットしました");
+};
 
 document.getElementById("resetPoints").onclick=()=>{
- if(confirm("ポイントを0に戻しますか？")){
-   state.points=0;
-   save();
-   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-   addLog(`🔄 ${myName} がポイントを0にリセットしました。`);
-   toast("ポイントを0に戻しました");
- }
+ if(!confirm("ポイントを0に戻しますか？"))return;
+ state.points=0;
+ save();
+ toast("ポイントを0に戻しました");
 };
+
+function resetAllGameData() {
+ state = makeInitial();
+ setTurn(1, false);
+ document.getElementById("predictInput").value = "";
+ document.getElementById("predictInput").disabled = false;
+ document.getElementById("predictConfirmBtn").disabled = false;
+ document.getElementById("weaponInput").value = "";
+ document.getElementById("weaponInput").disabled = false;
+ document.getElementById("weaponShuffleBtn").disabled = false;
+ document.getElementById("killInput").value = "0";
+ document.getElementById("killInput").disabled = true;
+ document.getElementById("confirmKillBtn").disabled = true;
+ document.getElementById("matchEndBtn").disabled = true;
+
+ isMatchStarted = false;
+ currentPrediction = null;
+ isPredictionConfirmed = false;
+ isTurnOk = false;
+ isKillConfirmed = false;
+ doubleNextFlag = false;
+ linearNextFlag = false;
+ minus2xNextFlag = false;
+ hecharaNextFlag = false;
+ senzaiBonusValue = 0;
+ sibariTurnCounts = {};
+ horiPoints = 1;
+ horiWakeStreak = 0;
+
+ let turnOkBtn = document.getElementById("turnOkBtn");
+ turnOkBtn.classList.remove("active");
+ turnOkBtn.textContent = "このターンok";
+ turnOkBtn.disabled = true;
+
+ clearLogUI();
+ save();
+ toast("全てを初期化・リセットしました");
+}
 
 document.getElementById("resetAllBtn").onclick=()=>{
- if(confirm("【警告】ポイント、手札、歴史ヒーロー、ターン数など、全てのデータを完全にリセットしますか？")){
-   state = makeInitial();
-   turnCount = 1;
-   document.getElementById("currentTurnVal").textContent = "1";
-   save();
-   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-   addLog(`💥 ${myName} が全データを一括リセットしました。`);
-   toast("すべてのデータを一括リセットしました");
- }
+ if(!confirm("全てを一括リセットしますか？（ポイント・全手札・歴史ヒーロー・ターン数などが完全初期化されます）"))return;
+ resetAllGameData();
 };
 
+document.getElementById("playerNameInput").oninput = (e) => {
+ state.name = e.target.value.trim();
+ save();
+};
+
+if(state.name) {
+ document.getElementById("playerNameInput").value = state.name;
+}
+
 render();
+checkDrawConditions();
 </script>
 </body>
 </html>
