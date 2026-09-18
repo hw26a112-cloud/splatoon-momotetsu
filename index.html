@@ -112,12 +112,12 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
     <div class="predict-box">
       <div class="input-row">
         <label for="predictInput">🎯 予想数値</label>
-        <input type="number" id="predictInput" placeholder="数値を入力" value="0">
+        <input type="number" id="predictInput" placeholder="数値を入力">
       </div>
 
       <div class="match-control-box">
-        <button class="match-btn btn-match-start" id="matchStartBtn">▶ 試合開始（予想済み）</button>
-        <button class="match-btn btn-match-end" id="matchEndBtn">⏹ 試合終了</button>
+        <button class="match-btn btn-match-start" id="matchStartBtn" disabled>▶ 試合開始（全員の予想完了待ち）</button>
+        <button class="match-btn btn-match-end" id="matchEndBtn" disabled>⏹ 試合終了</button>
       </div>
 
       <div class="input-row">
@@ -206,7 +206,7 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
 </div><div id="toast" class="toast"></div>
 
 <script>
-const KEY="splatoon_momotetsu_card_manager_v23";
+const KEY="splatoon_momotetsu_card_manager_v24";
 
 const cards=[
 ["とっかえっこカード","白","自分の持ち点と、他の人の持ち点を入れ替える",1],
@@ -243,19 +243,20 @@ const historyCards=[
 ["日野社長","紫","・毎ターン 50% の確率でカードを生み出す",1, "632193483276812833.jpg"],
 ["ヤラセさん","紫","・毎試合後 50% の確率で失敗をなかったことにできる",1, "632193682875351126.jpg"],
 ["トゲニャン","紫","・相手から受ける悪いカードの効果を 50% の確率で無効化する（無効化できた時はその効果を跳ね返す）",1, "632193783521345625.jpg"],
-["カクさん","紫","・毎試合後 50% の確率で自分を除いた他のプレイヤーに獲得ポイントの半分を拡散する（失敗時のみ発動）",1, "632193925490147896.jpg"],
+["カクさん","紫","・毎試合後 50% の確率で発動する。失敗時、マイナスになった分のポイントの半分を自分以外の全プレイヤーに付与する",1, "632193925490147896.jpg"],
 ["クーパー","紫","・毎ターン発動可能、自身を除く他のプレイヤー1人をランダムに自身と同じ合計ポイントにする\n・発動後、このカードは消える\n・9ターン目の終わりまで発動されなかった場合強制的に能力を発動させる",1, "632194138208469680.jpg"],
 ["マッスル","紫","・毎ターン 50% の確率で発動する。このカードが発動した時、プレイヤーの合計ポイントが 1、2 位の時、徳政令カードをドローする。プレイヤーの合計ポイントが 3、4 位の時、千載一遇カードをドローする。\n・10ターン目終了かつ、このカードを所持しているプレイヤーの合計ポイントが最下位の時、とっかえカードをドローする",1, "632194635368497207.jpg"],
 ["パンデミック","紫","・毎試合後 50% の確率で発動する。自分を除く他のプレイヤーが失敗した時、そのポイントを 2 倍にする",1, "632195425944469952.jpg"],
 ["深田えいみ","紫","・毎ターン 50% の確率で発動する。自分を除く、他のプレイヤーが歴史ヒーローを所持している時、ランダムなプレイヤーから歴史ヒーローを寝取る\n・寝取り後、このカードは消える",1, "632195657167798275.jpg"],
 ["堀大輔","紫","・毎ターン発動する。起きる/寝るのルーレットを引くことができる\n・初期堀ポイントは 1\n(寝た場合) 現在所持している堀ポイントを 3 倍する\n(起きた場合) 現在所持している堀ポイントを獲得できる\n・連続して 3 ターン起きた場合、このカードは消える",1, "632195894766207203.jpg"],
 ["いまい らちお","紫","毎試合後 50% の確率で成功した時のポイントを 2 倍にする",1, "632238913796702345.jpg"],
-["イケメン犬","紫","・毎ターン 50% の確率で発動する。自分はランダムなカードをドローすることができるかつ、自分を除く他プレイヤー1人にキングデビルカードをドローさせる",1, "IMG_9336.JPG"]
+["黒いイケメン犬","紫","・毎ターン 50% の確率で発動する。自分はランダムなカードをドローすることができるかつ、自分を除く他プレイヤー1人にキングデビルカードをドローさせる",1, "IMG_9336.JPG"]
 ].map(x=>({id:crypto.randomUUID(),name:x[0],color:x[1],desc:x[2],copies:x[3],img:x[4]||""}));
 
 let turnCount = 1;
 let currentPrediction = null;
-let isMatchStarted = false; // 試合中かどうか
+let isPredictionReady = false; 
+let isMatchStarted = false; 
 let horiPoints = 1;
 let horiWakeStreak = 0;
 
@@ -332,66 +333,107 @@ document.getElementById("clearLogBtn").onclick = (e) => {
   toast("ログをクリアしました");
 };
 
-// 試合開始ボタンのクリック
-document.getElementById("matchStartBtn").onclick = () => {
+document.getElementById("predictInput").oninput = (e) => {
+  let val = e.target.value.trim();
+  if (val !== "" && !isNaN(parseInt(val, 10))) {
+    currentPrediction = parseInt(val, 10);
+    isPredictionReady = true;
+  } else {
+    currentPrediction = null;
+    isPredictionReady = false;
+  }
+  checkAllPredictionsReady();
+  broadcastState();
+};
+
+function checkAllPredictionsReady() {
   if (isMatchStarted) return;
 
-  let val = parseInt(document.getElementById("predictInput").value, 10);
-  if (isNaN(val)) val = 0;
-  
-  currentPrediction = val;
+  let allReady = isPredictionReady;
+  Object.keys(otherStates).forEach(k => {
+    if (!otherStates[k].isPredictionReady) {
+      allReady = false;
+    }
+  });
+
+  let matchStartBtn = document.getElementById("matchStartBtn");
+  if (allReady) {
+    matchStartBtn.disabled = false;
+    matchStartBtn.textContent = "▶ 試合開始（全員入力完了！）";
+  } else {
+    matchStartBtn.disabled = true;
+    matchStartBtn.textContent = "▶ 試合開始（全員の予想完了待ち）";
+  }
+}
+
+function executeMatchStart(byName = null) {
+  if (isMatchStarted) return;
   isMatchStarted = true;
-  
+
   let matchStartBtn = document.getElementById("matchStartBtn");
   matchStartBtn.disabled = true;
   matchStartBtn.textContent = "▶ 試合中";
   document.getElementById("predictInput").disabled = true;
-  
+  document.getElementById("matchEndBtn").disabled = false;
+
   let myName = document.getElementById("playerNameInput").value.trim() || "プレイヤー";
-  addLog(`🎮 【試合開始】 ${myName} が予想数値「${val}」で試合を開始しました。`, true);
-  toast(`予想数値 ${val} でロックしました！`);
-  broadcastState();
+  let triggerName = byName || myName;
+  addLog(`🎮 【試合開始】 ${triggerName} の操作により、全員一斉に試合が開始されました！`, false);
+  toast(`🎮 試合が開始されました！`);
+}
+
+document.getElementById("matchStartBtn").onclick = () => {
+  executeMatchStart();
+  Object.values(conns).forEach(c => {
+    if (c && c.open) c.send({ type: 'trigger_match_start', name: document.getElementById("playerNameInput").value.trim() || "プレイヤー" });
+  });
 };
 
-// 試合終了ボタンのクリック（歴史ヒーロー自動判定の実行）
-document.getElementById("matchEndBtn").onclick = () => {
+// 試合終了の実行（このタイミングで50%の発動抽選を行い、結果を準備）
+function executeMatchEnd(byName = null) {
   document.getElementById("matchEndBtn").disabled = true;
   document.getElementById("killInput").disabled = false;
   document.getElementById("confirmKillBtn").disabled = false;
 
-  // 試合中のボタンはロックしたまま、表記を「試合開始」に戻す
   let matchStartBtn = document.getElementById("matchStartBtn");
   matchStartBtn.textContent = "▶ 試合開始（予想済み）";
   matchStartBtn.disabled = true;
 
   let myName = document.getElementById("playerNameInput").value.trim() || "プレイヤー";
-  addLog(`🏁 【試合終了】 ${myName} が試合を終了しました。キル数が入力可能です。`, true);
+  let triggerName = byName || myName;
+  addLog(`🏁 【試合終了】 ${triggerName} の操作により全員の試合が終了しました。キル数を確定してください。`, false);
 
-  // 所持中の歴史ヒーローカードを取得
   let myHistory = state.historyHand.map(id => getCard(id)).filter(Boolean);
 
-  // 1. パンデミック
+  // 各カードの発動準備（50%抽選）
   let pandemicCard = myHistory.find(c => c.name === "パンデミック");
   if (pandemicCard) {
     let active = Math.random() < 0.5;
-    if (active) {
-      addLog(`☣️ 【パンデミック発動】自分以外の失敗したプレイヤーのマイナスポイントを2倍にします！`);
-      toast(`☣️ パンデミック：発動！`);
-      Object.keys(otherStates).forEach(peerId => {
-        let p = otherStates[peerId];
-        if (p && p.turnResult === 'failure' && conns[peerId] && conns[peerId].open) {
-          let currPts = p.points || 0;
-          let newPts = currPts < 0 ? currPts * 2 : currPts;
-          conns[peerId].send({ type: 'set_points', points: newPts });
-        }
-      });
-    } else {
-      addLog(`☣️ 【パンデミック】は不発でした。`);
-      toast(`☣️ パンデミック：不発`);
-    }
+    state.historyStatus[pandemicCard.id] = active ? "発動準備" : "不発";
+    addLog(`☣️ 【パンデミック】 抽選結果: ${active ? "発動決定！" : "不発"}`);
   }
 
-  // 2. 深田えいみ
+  let yaraseCard = myHistory.find(c => c.name === "ヤラセさん");
+  if (yaraseCard) {
+    let active = Math.random() < 0.5;
+    state.historyStatus[yaraseCard.id] = active ? "発動準備" : "不発";
+    addLog(`🎬 【ヤラセさん】 抽選結果: ${active ? "発動決定！" : "不発"}`);
+  }
+
+  let imaiCard = myHistory.find(c => c.name === "いまい らちお");
+  if (imaiCard) {
+    let active = Math.random() < 0.5;
+    state.historyStatus[imaiCard.id] = active ? "発動準備" : "不発";
+    addLog(`🐟 【いまい らちお】 抽選結果: ${active ? "発動決定！" : "不発"}`);
+  }
+
+  let kakuCard = myHistory.find(c => c.name === "カクさん");
+  if (kakuCard) {
+    let active = Math.random() < 0.5;
+    state.historyStatus[kakuCard.id] = active ? "発動準備" : "不発";
+    addLog(`📜 【カクさん】 抽選結果: ${active ? "発動決定！" : "不発"}`);
+  }
+
   let fukadaCard = myHistory.find(c => c.name === "深田えいみ");
   if (fukadaCard) {
     let active = Math.random() < 0.5;
@@ -429,15 +471,12 @@ document.getElementById("matchEndBtn").onclick = () => {
         }
       } else {
         addLog(`💋 【深田えいみ発動】しかし他プレイヤーに歴史ヒーローがいませんでした。`);
-        toast(`💋 深田えいみ：発動（対象なし）`);
       }
     } else {
       addLog(`💋 【深田えいみ】は不発でした。`);
-      toast(`💋 深田えいみ：不発`);
     }
   }
 
-  // 3. 堀大輔
   let horiCard = myHistory.find(c => c.name === "堀大輔");
   if (horiCard) {
     let active = Math.random() < 0.5;
@@ -470,21 +509,6 @@ document.getElementById("matchEndBtn").onclick = () => {
     }
   }
 
-  // 4. いまい らちお
-  let imaiCard = myHistory.find(c => c.name === "いまい らちお");
-  if (imaiCard) {
-    let active = Math.random() < 0.5;
-    state.historyStatus[imaiCard.id] = active ? "発動準備" : "不発";
-    if (active) {
-      addLog(`🐟 【いまい らちお発動】成功時のポイントが2倍になります！`);
-      toast(`🐟 いまい らちお：発動！`);
-    } else {
-      addLog(`🐟 【いまい らちお】は不発でした。`);
-      toast(`🐟 いまい らちお：不発`);
-    }
-  }
-
-  // 5. 日野社長
   let hinoCard = myHistory.find(c => c.name === "日野社長");
   if (hinoCard) {
     let active = Math.random() < 0.5;
@@ -496,31 +520,12 @@ document.getElementById("matchEndBtn").onclick = () => {
         let drawnCard = getCard(drawnId);
         addLog(`🏢 【日野社長発動】山札から「${drawnCard?.name || 'カード'}」を獲得しました！`);
         toast(`🏢 日野社長：発動！「${drawnCard?.name || 'カード'}」獲得！`);
-      } else {
-        addLog(`🏢 【日野社長発動】（山札が空のためカードを引けませんでした）`);
-        toast(`🏢 日野社長：発動！（山札空）`);
       }
     } else {
       addLog(`🏢 【日野社長】は不発でした。`);
-      toast(`🏢 日野社長：不発`);
     }
   }
 
-  // 6. ヤラセさん
-  let yaraseCard = myHistory.find(c => c.name === "ヤラセさん");
-  if (yaraseCard) {
-    let active = Math.random() < 0.5;
-    state.historyStatus[yaraseCard.id] = active ? "発動準備" : "不発";
-    if (active) {
-      addLog(`🎬 【ヤラセさん発動】失敗（マイナス）時に加算を0にリセットします！`);
-      toast(`🎬 ヤラセさん：発動！`);
-    } else {
-      addLog(`🎬 【ヤラセさん】は不発でした。`);
-      toast(`🎬 ヤラセさん：不発`);
-    }
-  }
-
-  // 7. マッスル
   let muscleCard = myHistory.find(c => c.name === "マッスル");
   if (muscleCard) {
     let active = Math.random() < 0.5;
@@ -537,10 +542,8 @@ document.getElementById("matchEndBtn").onclick = () => {
       }
     } else {
       addLog(`💪 【マッスル】は不発でした。`);
-      toast(`💪 マッスル：不発`);
     }
 
-    // 10ターン目＆最下位の特殊判定
     if (turnCount === 10) {
       let { isLowest } = getMyRank();
       if (isLowest) {
@@ -551,50 +554,48 @@ document.getElementById("matchEndBtn").onclick = () => {
     }
   }
 
-  // 8. クーパー
-  let cooperCard = myHistory.find(c => c.name === "クーパー");
-  if (cooperCard) {
-    addLog(`🌀 【クーパー】試合終了時の効果チェック（いつでも発動可能）`);
-  }
-
-  // 9. イケメン犬
-  let ikemenCard = myHistory.find(c => c.name === "イケメン犬");
+  // 黒いイケメン犬の処理
+  let ikemenCard = myHistory.find(c => c.name === "黒いイケメン犬");
   if (ikemenCard) {
     let active = Math.random() < 0.5;
     if (active) {
-      // 自身は通常ドロー
       if (state.deck.length > 0) {
         let i = Math.floor(Math.random() * state.deck.length);
         let drawnId = state.deck.splice(i, 1)[0];
         state.hand.push(drawnId);
         let drawnCard = getCard(drawnId);
-        addLog(`🐶 【イケメン犬発動】山札から「${drawnCard?.name || 'カード'}」を獲得！`);
+        addLog(`🐶 【黒いイケメン犬発動】山札から「${drawnCard?.name || 'カード'}」を獲得！`);
       }
 
-      // 他プレイヤー1人へキングデビルカードを強制手札追加
       let peerKeys = Object.keys(otherStates);
       if (peerKeys.length > 0) {
         let targetPeerId = peerKeys[Math.floor(Math.random() * peerKeys.length)];
         let targetName = otherStates[targetPeerId]?.name || "プレイヤー";
         if (conns[targetPeerId] && conns[targetPeerId].open) {
           conns[targetPeerId].send({ type: 'add_card_directly', cardName: "キングデビルカード" });
-          addLog(`🐶 【イケメン犬効果】${targetName} の手札に「キングデビルカード」を強制的にお見舞いしました！`);
-          toast(`🐶 イケメン犬：発動！ ${targetName} にキングデビルカード付与！`);
+          addLog(`🐶 【黒いイケメン犬効果】${targetName} の手札に「キングデビルカード」をドローさせました！`);
+          toast(`🐶 黒いイケメン犬：発動！ ${targetName} にキングデビルカード付与！`);
         }
       } else {
-        toast(`🐶 イケメン犬：発動！（自分以外のプレイヤー不在）`);
+        toast(`🐶 黒いイケメン犬：発動！（自分以外のプレイヤー不在）`);
       }
     } else {
-      addLog(`🐶 【イケメン犬】は不発でした。`);
-      toast(`🐶 イケメン犬：不発`);
+      addLog(`🐶 【黒いイケメン犬】は不発でした。`);
     }
   }
 
   save();
   toast("試合終了！キル数を入力してください");
+}
+
+document.getElementById("matchEndBtn").onclick = () => {
+  executeMatchEnd();
+  Object.values(conns).forEach(c => {
+    if (c && c.open) c.send({ type: 'trigger_match_end', name: document.getElementById("playerNameInput").value.trim() || "プレイヤー" });
+  });
 };
 
-// キル数確定 & ポイント計算
+// キル数確定 ＆ ポイント・歴史ヒーロー効果の適用
 document.getElementById("confirmKillBtn").onclick = () => {
   if (currentPrediction === null) {
     let pVal = parseInt(document.getElementById("predictInput").value, 10);
@@ -608,7 +609,6 @@ document.getElementById("confirmKillBtn").onclick = () => {
   let absPredict = Math.abs(currentPrediction);
   let myName = document.getElementById("playerNameInput").value.trim() || "プレイヤー";
 
-  // 歴史ヒーロー効果チェック
   let myHistoryCards = state.historyHand.map(id => getCard(id)).filter(Boolean);
   
   let imaiCard = myHistoryCards.find(c => c.name === "いまい らちお");
@@ -618,13 +618,14 @@ document.getElementById("confirmKillBtn").onclick = () => {
   let yaraseActive = (yaraseCard && state.historyStatus[yaraseCard.id] === "発動準備");
 
   let kakuCard = myHistoryCards.find(c => c.name === "カクさん");
+  let kakuActive = (kakuCard && state.historyStatus[kakuCard.id] === "発動準備");
 
   if (diff < 0) {
-    // 失敗時
+    // 失敗時（マイナス）
     let loss = absPredict;
     if (yaraseActive) {
       loss = 0;
-      addLog(`🎬 【ヤラセさん効果】失敗をなかったことにしました！（減算0pt）`);
+      addLog(`🎬 【ヤラセさん効果発動】失敗をなかったことにしました！（減算0pt）`);
       toast(`🎬 ヤラセさん効果：減算回避！`);
     }
 
@@ -632,28 +633,36 @@ document.getElementById("confirmKillBtn").onclick = () => {
     state.turnResult = "failure";
     addLog(`⚔️ ${myName}: キル数(${kills}) - 予想(${currentPrediction}) = ${diff} [マイナス] ➔ ${loss}pt 減算 [失敗]（現在: ${state.points}pt）`);
 
-    // カクさんの拡散効果（失敗時）
-    if (kakuCard) {
+    // カクさん（失敗時処理）
+    if (kakuActive && absPredict > 0) {
       let spreadPts = Math.floor(absPredict / 2);
       if (spreadPts > 0) {
-        addLog(`📜 【カクさん効果】失敗によりマイナス値の半分(${spreadPts}pt)を他プレイヤー全員に加算拡散します！`);
+        addLog(`📜 【カクさん効果発動】失敗によりマイナス分(${absPredict}pt)の半分(${spreadPts}pt)を他プレイヤー全員に付与します！`);
+        toast(`📜 カクさん：他プレイヤーに +${spreadPts}pt 付与`);
         Object.keys(otherStates).forEach(peerId => {
-          let p = otherStates[peerId];
-          if (p && conns[peerId] && conns[peerId].open) {
-            let currPts = p.points || 0;
+          if (conns[peerId] && conns[peerId].open) {
+            let p = otherStates[peerId];
+            let currPts = p ? (p.points || 0) : 0;
             conns[peerId].send({ type: 'set_points', points: currPts + spreadPts });
           }
         });
       }
     }
 
+    // パンデミック通知（他プレイヤーでパンデミックが発動準備状態の場合、失敗した自分をマイナス2倍に）
+    Object.keys(otherStates).forEach(peerId => {
+      if (conns[peerId] && conns[peerId].open) {
+        conns[peerId].send({ type: 'player_failed_notify', name: myName, lossPts: loss });
+      }
+    });
+
     toast(`キル数不足により -${loss}pt！ 【失敗】`);
   } else {
-    // 成功時
+    // 成功時（プラス / 0以上）
     let earned = absPredict;
     if (imaiActive) {
       earned *= 2;
-      addLog(`🐟 【いまい らちお効果】成功ポイントが2倍(${earned}pt)になりました！`);
+      addLog(`🐟 【いまい らちお効果発動】成功ポイントが2倍(${earned}pt)になりました！`);
     }
     changePoints(earned);
     state.turnResult = "success";
@@ -661,7 +670,13 @@ document.getElementById("confirmKillBtn").onclick = () => {
     toast(`予想達成！ +${earned}pt 獲得！ 【成功】`);
   }
 
-  // キル数確定により「ターン終了」ボタンを解放（試合開始はロックのまま）
+  // ステータスリセット
+  myHistoryCards.forEach(c => {
+    if (["パンデミック", "ヤラセさん", "いまい らちお", "カクさん"].includes(c.name)) {
+      delete state.historyStatus[c.id];
+    }
+  });
+
   document.getElementById("turnEndBtn").disabled = false;
   document.getElementById("confirmKillBtn").disabled = true;
 
@@ -673,6 +688,7 @@ function addCardByName(cardName) {
   if (targetDef) {
     state.hand.push(targetDef.id);
     save();
+    render();
     let myName = document.getElementById("playerNameInput").value.trim() || "自分";
     addLog(`🎴 ${myName} が「${cardName}」を獲得しました。`);
     toast(`🎴 「${cardName}」を手札に追加しました！`);
@@ -737,6 +753,14 @@ function setupConn(conn){
       setTurn(data.turn, false);
       return;
     }
+    if(data.type === 'trigger_match_start') {
+      executeMatchStart(data.name);
+      return;
+    }
+    if(data.type === 'trigger_match_end') {
+      executeMatchEnd(data.name);
+      return;
+    }
     if(data.type === 'set_points') {
       state.points = data.points;
       save();
@@ -746,6 +770,23 @@ function setupConn(conn){
     if(data.type === 'add_card_directly') {
       addCardByName(data.cardName);
       toast(`😈 手札に「${data.cardName}」が追加されました！`);
+      return;
+    }
+    if(data.type === 'player_failed_notify') {
+      // 他プレイヤーが失敗した際のパンデミック判定
+      let myHistory = state.historyHand.map(id => getCard(id)).filter(Boolean);
+      let pandemicCard = myHistory.find(c => c.name === "パンデミック");
+      if (pandemicCard && state.historyStatus[pandemicCard.id] === "発動準備") {
+        if (data.lossPts > 0) {
+          let extraLoss = data.lossPts; 
+          addLog(`☣️ 【パンデミック発動！】 ${data.name} の失敗ペナルティを2倍にし、さらに -${extraLoss}pt を追い討ち！`);
+          toast(`☣️ パンデミック発動！ ${data.name} のマイナスを2倍化！`);
+          if (conns[conn.peer] && conns[conn.peer].open) {
+            let curr = otherStates[conn.peer]?.points || 0;
+            conns[conn.peer].send({ type: 'set_points', points: curr - extraLoss });
+          }
+        }
+      }
       return;
     }
     if(data.type === 'steal_history') {
@@ -771,6 +812,7 @@ function setupConn(conn){
     }
     
     otherStates[conn.peer] = data;
+    checkAllPredictionsReady();
     renderOtherPlayers();
     render();
   });
@@ -778,6 +820,7 @@ function setupConn(conn){
   conn.on('close', () => {
     delete conns[conn.peer];
     delete otherStates[conn.peer];
+    checkAllPredictionsReady();
     renderOtherPlayers();
     render();
   });
@@ -785,6 +828,7 @@ function setupConn(conn){
   conn.on('error', () => {
     delete conns[conn.peer];
     delete otherStates[conn.peer];
+    checkAllPredictionsReady();
     renderOtherPlayers();
     render();
   });
@@ -800,7 +844,17 @@ function broadcastState(){
     let st = state.historyStatus[id] ? `【${state.historyStatus[id]}】` : '';
     return {id: c.id, name: c.name + st, color: c.color};
   }).filter(Boolean);
-  let payload = { peerId: peer.id, name: myName, points: state.points, prediction: currentPrediction, hand: myHandCards, historyHand: myHistoryCards, turnResult: state.turnResult };
+  
+  let payload = { 
+    peerId: peer.id, 
+    name: myName, 
+    points: state.points, 
+    prediction: currentPrediction, 
+    isPredictionReady: isPredictionReady,
+    hand: myHandCards, 
+    historyHand: myHistoryCards, 
+    turnResult: state.turnResult 
+  };
   
   Object.values(conns).forEach(c => {
     if(c && c.open) c.send(payload);
@@ -818,7 +872,6 @@ function setTurn(newTurn, shouldBroadcast = true) {
   turnCount = newTurn;
   document.getElementById("currentTurnVal").textContent = turnCount;
 
-  // 9ターン目終了時のクーパー特殊判定
   if (oldTurn === 9 && turnCount === 10) {
     let cooperCard = state.historyHand.map(id => getCard(id)).find(c => c && c.name === "クーパー");
     if (cooperCard) {
@@ -835,20 +888,19 @@ function setTurn(newTurn, shouldBroadcast = true) {
     }
   }
 
-  // ターン終了で試合開始が解禁・ターン終了ボタンを再びロック
   isMatchStarted = false;
   currentPrediction = null;
-  
-  let matchStartBtn = document.getElementById("matchStartBtn");
-  matchStartBtn.disabled = false;
-  matchStartBtn.textContent = "▶ 試合開始（予想済み）";
+  isPredictionReady = false;
+  document.getElementById("predictInput").value = "";
 
   document.getElementById("turnEndBtn").disabled = true;
   document.getElementById("predictInput").disabled = false;
   document.getElementById("killInput").disabled = true;
   document.getElementById("confirmKillBtn").disabled = true;
-  document.getElementById("matchEndBtn").disabled = false;
+  document.getElementById("matchEndBtn").disabled = true;
   document.getElementById("killInput").value = "0";
+
+  checkAllPredictionsReady();
 
   state.turnResult = "";
   Object.keys(otherStates).forEach(k => {
@@ -858,7 +910,7 @@ function setTurn(newTurn, shouldBroadcast = true) {
   if(shouldBroadcast) {
     broadcastTurn();
     let myName = document.getElementById("playerNameInput").value.trim() || "プレイヤー";
-    addLog(`⏳ ${myName} がターンを終了しました。（現在: 第${turnCount}ターン）`);
+    addLog(`⏳ ${myName} の操作で全員が第${turnCount}ターンへ進みました。`);
   }
 
   save();
@@ -901,25 +953,41 @@ document.getElementById("leaveRoomBtn").onclick = () => leaveRoom();
 
 document.getElementById("turnEndBtn").onclick = () => {
   setTurn(turnCount + 1, true);
-  toast(`ターン終了！第${turnCount}ターンへ進みました`);
+  toast(`ターン終了！全員が第${turnCount}ターンへ進みました`);
 };
 
 document.getElementById("resetTurnBtn").onclick = () => {
   setTurn(1, true);
   let myName = document.getElementById("playerNameInput").value.trim() || "プレイヤー";
-  addLog(`🔄 ${myName} がターンを1にリセットしました。`);
-  toast("ターンを1にリセットしました");
+  addLog(`🔄 ${myName} が全員のターンを1にリセットしました。`);
+  toast("全員のターンを1にリセットしました");
 };
 
 function renderOtherPlayers(){
   let container = document.getElementById("otherPlayersList");
   container.innerHTML = "";
 
-  let all = [{ peerId: 'me', name: document.getElementById("playerNameInput").value.trim() || "自分", points: state.points, prediction: currentPrediction, hand: state.hand.map(id => getCard(id)).filter(Boolean), historyHand: state.historyHand.map(id => getCard(id)).filter(Boolean), turnResult: state.turnResult }];
+  let all = [{ 
+    peerId: 'me', 
+    name: document.getElementById("playerNameInput").value.trim() || "自分", 
+    points: state.points, 
+    prediction: currentPrediction, 
+    hand: state.hand.map(id => getCard(id)).filter(Boolean), 
+    historyHand: state.historyHand.map(id => getCard(id)).filter(Boolean), 
+    turnResult: state.turnResult 
+  }];
   
   Object.keys(otherStates).forEach(k => {
     let p = otherStates[k];
-    all.push({ peerId: k, name: p.name || "プレイヤー", points: p.points || 0, prediction: p.prediction, hand: p.hand||[], historyHand: p.historyHand||[], turnResult: p.turnResult||"" });
+    all.push({ 
+      peerId: k, 
+      name: p.name || "プレイヤー", 
+      points: p.points || 0, 
+      prediction: p.prediction, 
+      hand: p.hand||[], 
+      historyHand: p.historyHand||[], 
+      turnResult: p.turnResult||"" 
+    });
   });
 
   all.sort((a, b) => b.points - a.points);
@@ -947,7 +1015,7 @@ function renderOtherPlayers(){
       <div class="peer-section-title">📜 歴史ヒーロー</div>
       <div class="peer-hand-list">${historyHtml || '<span class="empty">所持なし</span>'}</div>
       <div class="judge-box">
-        <div>ステータス:</div>
+        <div>判定結果:</div>
         <div>
           <span class="status-badge success ${successClass}">SUCCESS (成功)</span>
           <span class="status-badge failure ${failureClass}">FAILED (失敗)</span>
@@ -1240,16 +1308,19 @@ document.getElementById("resetHistoryDeckBtn").onclick=()=>{
 };
 
 document.getElementById("resetAllBtn").onclick=()=>{
- if(confirm("【警告】ポイントを0にし、手札・歴史ヒーロー・山札・ターン数をすべてゲーム開始時の状態に戻しますか？")){
+ if(confirm("【警告】ポイントを0にし、手札・歴史ヒーロー・山札・ターン数をすべてゲーム開始時の状態に戻しますか？\n（※ルームの接続は保持されます）")){
    state.points = 0;
-   setTurn(1, true);
+   setTurn(1, false);
    resetDeckAll();
    resetHistoryDeckAll();
-   save();
    clearLogUI();
+   
    let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-   addLog(`💥 ${myName} が全ての状態を一括リセットしました。`);
-   toast("💥 すべての状態を初期化（リセット）しました");
+   addLog(`💥 ${myName} がゲーム状態を一括リセットしました。`);
+   
+   broadcastState();
+   broadcastTurn();
+   toast("💥 ゲーム状態を初期化（リセット）しました");
  }
 };
 
@@ -1266,6 +1337,7 @@ document.getElementById("resetPoints").onclick=()=>{
   addLog(`🔄 ${myName} がポイントを0にリセットしました。`);
   toast("ポイントを0に戻しました");
 };
+
 document.getElementById("playerNameInput").oninput=()=>broadcastState();
 
 render();
