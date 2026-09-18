@@ -20,7 +20,6 @@ section{background:var(--panel);border:2px solid var(--border);border-radius:24p
 .reset-deck-btn{width:100%;border:1px solid var(--border);border-radius:16px;background:#171c27;color:#fff;font-weight:700;font-size:15px;padding:12px;cursor:pointer}
 h2{margin:0 0 16px;font-size:22px}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
 .card{background:var(--panel2);border:1px solid var(--border);border-radius:18px;padding:15px;min-height:150px;display:flex;flex-direction:column;justify-content:space-between}
-.card-img{width:100%;height:160px;object-fit:cover;border-radius:12px;margin-bottom:10px;border:1px solid var(--border)}
 .card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}.card-name{font-size:17px;font-weight:800}.badge{font-size:11px;border-radius:999px;padding:3px 7px;font-weight:800;white-space:nowrap}
 .white{background:#eee;color:#222}.black{background:#292d38;color:#fff;border:1px solid #596174}.green{background:#287d51;color:#fff}.purple{background:var(--history);color:#fff}.rank-badge{background:var(--gold);color:#000;font-weight:900}
 .card-desc{color:#b5bdca;font-size:13px;line-height:1.5;margin-top:8px;white-space:pre-wrap;}.copies{color:#8e98ab;font-size:12px;margin-top:8px}.card-actions{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
@@ -238,19 +237,19 @@ const cards=[
 ].map(x=>({id:crypto.randomUUID(),name:x[0],color:x[1],desc:x[2],copies:x[3],img:x[4]||""}));
 
 const historyCards=[
-["かわらばやし","紫","・毎ターン行動できる。ランダムでポイントを獲得できる(1、3、5ポイントの中から)\n・クビ：これを引くと所持ポイントが0になるかつ、かわらばやしが消える",1, "632233501231677633.jpg"],
-["アブドラ","紫","・自分が引いた悪いカードの効果を 50% の確率で無効化できる",1, "632193350484623611.jpg"],
-["日野社長","紫","・毎ターン 50% の確率でカードを生み出す",1, "632193483276812833.jpg"],
-["ヤラセさん","紫","・毎試合後 50% の確率で失敗をなかったことにできる",1, "632193682875351126.jpg"],
-["トゲニャン","紫","・相手から受ける悪いカードの効果を 50% の確率で無効化する（無効化できた時はその効果を跳ね返す）",1, "632193783521345625.jpg"],
-["カクさん","紫","・毎試合後 50% の確率で発動する。失敗時、マイナスになった分のポイントの半分を自分以外の全プレイヤーに付与する",1, "632193925490147896.jpg"],
-["クーパー","紫","・毎ターン発動可能、自身を除く他のプレイヤー1人をランダムに自身と同じ合計ポイントにする\n・発動後、このカードは消える\n・9ターン目の終わりまで発動されなかった場合強制的に能力を発動させる",1, "632194138208469680.jpg"],
-["マッスル","紫","・毎ターン 50% の確率で発動する。このカードが発動した時、プレイヤーの合計ポイントが 1、2 位の時、徳政令カードをドローする。プレイヤーの合計ポイントが 3、4 位の時、千載一遇カードをドローする。\n・10ターン目終了かつ、このカードを所持しているプレイヤーの合計ポイントが最下位の時、とっかえカードをドローする",1, "632194635368497207.jpg"],
-["パンデミック","紫","・毎試合後 50% の確率で発動する。自分を除く他のプレイヤーが失敗した時、そのポイントを 2 倍にする",1, "632195425944469952.jpg"],
-["深田えいみ","紫","・毎ターン 50% の確率で発動する。自分を除く、他のプレイヤーが歴史ヒーローを所持している時、ランダムなプレイヤーから歴史ヒーローを寝取る\n・寝取り後、このカードは消える",1, "632195657167798275.jpg"],
-["堀大輔","紫","・毎ターン発動する。起きる/寝るのルーレットを引くことができる\n・初期堀ポイントは 1\n(寝た場合) 現在所持している堀ポイントを 3 倍する\n(起きた場合) 現在所持している堀ポイントを獲得できる\n・連続して 3 ターン起きた場合、このカードは消える",1, "632195894766207203.jpg"],
-["いまい らちお","紫","毎試合後 50% の確率で成功した時のポイントを 2 倍にする",1, "632238913796702345.jpg"],
-["黒いイケメン犬","紫","・毎ターン 50% の確率で発動する。自分はランダムなカードをドローすることができるかつ、自分を除く他プレイヤー1人にキングデビルカードをドローさせる",1, "IMG_9336.JPG"]
+["かわらばやし","紫","・毎ターン行動できる。ランダムでポイントを獲得できる(1、3、5ポイントの中から)\n・クビ：これを引くと所持ポイントが0になるかつ、かわらばやしが消える",1],
+["アブドラ","紫","・自分が引いた悪いカードの効果を 50% の確率で無効化できる",1],
+["日野社長","紫","・毎ターン 50% の確率でカードを生み出す",1],
+["ヤラセさん","紫","・毎試合後 50% の確率で失敗をなかったことにできる",1],
+["トゲニャン","紫","・相手から受ける悪いカードの効果を 50% の確率で無効化する（無効化できた時はその効果を跳ね返す）",1],
+["カクさん","紫","・毎試合後 50% の確率で発動する。失敗時、マイナスになった分のポイントの半分を自分以外の全プレイヤーに付与する",1],
+["クーパー","紫","・毎ターン発動可能、自身を除く他のプレイヤー1人をランダムに自身と同じ合計ポイントにする\n・発動後、このカードは消える\n・9ターン目の終わりまで発動されなかった場合強制的に能力を発動させる",1],
+["マッスル","紫","・毎ターン 50% の確率で発動する。このカードが発動した時、プレイヤーの合計ポイントが 1、2 位の時、徳政令カードをドローする。プレイヤーの合計ポイントが 3、4 位の時、千載一遇カードをドローする。\n・10ターン目終了かつ、このカードを所持しているプレイヤーの合計ポイントが最下位の時、とっかえカードをドローする",1],
+["パンデミック","紫","・毎試合後 50% の確率で発動する。自分を除く他のプレイヤーが失敗した時、そのポイントを 2 倍にする",1],
+["深田えいみ","紫","・毎ターン 50% の確率で発動する。自分を除く、他のプレイヤーが歴史ヒーローを所持している時、ランダムなプレイヤーから歴史ヒーローを寝取る\n・寝取り後、このカードは消える",1],
+["堀大輔","紫","・毎ターン発動する。起きる/寝るのルーレットを引くことができる\n・初期堀ポイントは 1\n(寝た場合) 現在所持している堀ポイントを 3 倍する\n(起きた場合) 現在所持している堀ポイントを獲得できる\n・連続して 3 ターン起きた場合、このカードは消える",1],
+["いまい らちお","紫","毎試合後 50% の確率で成功した時のポイントを 2 倍にする",1],
+["黒いイケメン犬","紫","・毎ターン 50% の確率で発動する。自分はランダムなカードをドローすることができるかつ、自分を除く他プレイヤー1人にキングデビルカードをドローさせる",1]
 ].map(x=>({id:crypto.randomUUID(),name:x[0],color:x[1],desc:x[2],copies:x[3],img:x[4]||""}));
 
 let turnCount = 1;
@@ -389,7 +388,6 @@ document.getElementById("matchStartBtn").onclick = () => {
   });
 };
 
-// 試合終了の実行（このタイミングで50%の発動抽選を行い、結果を準備）
 function executeMatchEnd(byName = null) {
   document.getElementById("matchEndBtn").disabled = true;
   document.getElementById("killInput").disabled = false;
@@ -405,7 +403,6 @@ function executeMatchEnd(byName = null) {
 
   let myHistory = state.historyHand.map(id => getCard(id)).filter(Boolean);
 
-  // 各カードの発動準備（50%抽選）
   let pandemicCard = myHistory.find(c => c.name === "パンデミック");
   if (pandemicCard) {
     let active = Math.random() < 0.5;
@@ -554,7 +551,6 @@ function executeMatchEnd(byName = null) {
     }
   }
 
-  // 黒いイケメン犬の処理
   let ikemenCard = myHistory.find(c => c.name === "黒いイケメン犬");
   if (ikemenCard) {
     let active = Math.random() < 0.5;
@@ -595,7 +591,6 @@ document.getElementById("matchEndBtn").onclick = () => {
   });
 };
 
-// キル数確定 ＆ ポイント・歴史ヒーロー効果の適用
 document.getElementById("confirmKillBtn").onclick = () => {
   if (currentPrediction === null) {
     let pVal = parseInt(document.getElementById("predictInput").value, 10);
@@ -621,7 +616,6 @@ document.getElementById("confirmKillBtn").onclick = () => {
   let kakuActive = (kakuCard && state.historyStatus[kakuCard.id] === "発動準備");
 
   if (diff < 0) {
-    // 失敗時（マイナス）
     let loss = absPredict;
     if (yaraseActive) {
       loss = 0;
@@ -633,7 +627,6 @@ document.getElementById("confirmKillBtn").onclick = () => {
     state.turnResult = "failure";
     addLog(`⚔️ ${myName}: キル数(${kills}) - 予想(${currentPrediction}) = ${diff} [マイナス] ➔ ${loss}pt 減算 [失敗]（現在: ${state.points}pt）`);
 
-    // カクさん（失敗時処理）
     if (kakuActive && absPredict > 0) {
       let spreadPts = Math.floor(absPredict / 2);
       if (spreadPts > 0) {
@@ -649,7 +642,6 @@ document.getElementById("confirmKillBtn").onclick = () => {
       }
     }
 
-    // パンデミック通知（他プレイヤーでパンデミックが発動準備状態の場合、失敗した自分をマイナス2倍に）
     Object.keys(otherStates).forEach(peerId => {
       if (conns[peerId] && conns[peerId].open) {
         conns[peerId].send({ type: 'player_failed_notify', name: myName, lossPts: loss });
@@ -658,7 +650,6 @@ document.getElementById("confirmKillBtn").onclick = () => {
 
     toast(`キル数不足により -${loss}pt！ 【失敗】`);
   } else {
-    // 成功時（プラス / 0以上）
     let earned = absPredict;
     if (imaiActive) {
       earned *= 2;
@@ -670,7 +661,6 @@ document.getElementById("confirmKillBtn").onclick = () => {
     toast(`予想達成！ +${earned}pt 獲得！ 【成功】`);
   }
 
-  // ステータスリセット
   myHistoryCards.forEach(c => {
     if (["パンデミック", "ヤラセさん", "いまい らちお", "カクさん"].includes(c.name)) {
       delete state.historyStatus[c.id];
@@ -773,14 +763,13 @@ function setupConn(conn){
       return;
     }
     if(data.type === 'player_failed_notify') {
-      // 他プレイヤーが失敗した際のパンデミック判定
       let myHistory = state.historyHand.map(id => getCard(id)).filter(Boolean);
       let pandemicCard = myHistory.find(c => c.name === "パンデミック");
       if (pandemicCard && state.historyStatus[pandemicCard.id] === "発動準備") {
         if (data.lossPts > 0) {
           let extraLoss = data.lossPts; 
-          addLog(`☣️ 【パンデミック発動！】 ${data.name} の失敗ペナルティを2倍にし、さらに -${extraLoss}pt を追い討ち！`);
-          toast(`☣️ パンデミック発動！ ${data.name} のマイナスを2倍化！`);
+          addLog(`MB 【パンデミック発動！】 ${data.name} の失敗ペナルティを2倍にし、さらに -${extraLoss}pt を追い討ち！`);
+          toast(`MB パンデミック発動！ ${data.name} のマイナスを2倍化！`);
           if (conns[conn.peer] && conns[conn.peer].open) {
             let curr = otherStates[conn.peer]?.points || 0;
             conns[conn.peer].send({ type: 'set_points', points: curr - extraLoss });
@@ -1128,7 +1117,6 @@ function swapHistoryCard(targetHistoryId) {
 
 function cardEl(c, isHistory=false){
  let el=document.createElement("div");el.className="card";
- let imgHtml = c.img ? `<img src="${esc(c.img)}" class="card-img" alt="${esc(c.name)}">` : '';
  
  let buttonsHtml = `<button class="small action">${isHistory?'使用する':'使用済みにする'}</button>`;
  if(isHistory) {
@@ -1141,7 +1129,7 @@ function cardEl(c, isHistory=false){
    displayName += `【${state.historyStatus[c.id]}】`;
  }
 
- el.innerHTML=`<div>${imgHtml}<div class="card-head"><span class="card-name">${esc(displayName)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div></div><div class="card-actions">${buttonsHtml}</div>`;
+ el.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(displayName)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div></div><div class="card-actions">${buttonsHtml}</div>`;
  
  el.querySelector(".action").onclick=()=>{
    if(isHistory){
@@ -1204,8 +1192,7 @@ function renderDeckList(){
     let c=getCard(id); if(!c) return;
     let count=counts[id];
     let el=document.createElement("div");el.className="card";
-    let imgHtml = c.img ? `<img src="${esc(c.img)}" class="card-img" alt="${esc(c.name)}">` : '';
-    el.innerHTML=`<div>${imgHtml}<div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div><div class="copies">山札の残り：${count}枚</div></div><div class="card-actions"><button class="primary get-btn" style="width:100%">手札に入れる</button></div>`;
+    el.innerHTML=`<div><div class="card-head"><span class="card-name">${esc(c.name)}</span><span class="badge ${cls(c.color)}">${esc(c.color)}</span></div><div class="card-desc">${esc(c.desc)}</div><div class="copies">山札の残り：${count}枚</div></div><div class="card-actions"><button class="primary get-btn" style="width:100%">手札に入れる</button></div>`;
     el.querySelector(".get-btn").onclick=()=>{
       let idx=state.deck.indexOf(id);
       if(idx>=0){
