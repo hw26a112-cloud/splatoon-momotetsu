@@ -112,6 +112,13 @@ details summary{cursor:pointer;font-weight:800;font-size:18px;list-style:none}
   <div id="shredderCardList" class="cards" style="max-width:600px;width:100%;margin-top:20px;"></div>
 </div>
 
+<div id="swapOverlay" class="overlay-lock">
+  <h2 id="swapStepTitle">🔄 カード交換</h2>
+  <p id="swapStepDesc">渡すカードを選択してください</p>
+  <div id="swapCardList" class="cards" style="max-width:600px;width:100%;margin-top:20px;"></div>
+  <button class="small danger" id="cancelSwapBtn" style="margin-top:20px;">キャンセル</button>
+</div>
+
 <div id="awardOverlay" class="overlay-lock">
   <div class="award-container">
     <div class="award-title">🏆 最終結果発表 🏆</div>
@@ -648,7 +655,7 @@ function executeMatchEnd(byName = null) {
       if (targets.length > 0) {
         let targetUser = targets[Math.floor(Math.random() * targets.length)];
         let stolenCardObj = targetUser.cards[Math.floor(Math.random() * targetUser.cards.length)];
-        let stolenCardName = stolenCardObj.name;
+        let stolenCardName = stolenCardObj.name.replace(/【.*?】/g, ""); // ステータス文字の除去
 
         sendToTarget(targetUser.peerId, { type: 'steal_history', cardName: stolenCardName });
 
@@ -880,13 +887,18 @@ document.getElementById("confirmKillBtn").onclick = () => {
 
     let gyuhoCard = handCardsList.find(c => c.name === "牛歩カード");
     if (gyuhoCard) {
-      earned = 1;
-      addLog(`🐂 【牛歩カード効果】取得ポイントが1になりました！（自動破棄されます）`, true, true);
-      toast(`🐂 牛歩カード効果：取得ポイント1！（破棄）`);
-      let gIdx = state.hand.indexOf(gyuhoCard.id);
-      if (gIdx >= 0) {
-        state.hand.splice(gIdx, 1);
-        state.discarded.push(gyuhoCard.id);
+      if (abdullahBlock) {
+        addLog(`👳‍♂️ 【アブドラ効果適応】アブドラの効果により、牛歩カードの取得ポイント1制限を無効化しました！`, true, true);
+        toast(`👳‍♂️ アブドラ効果で牛歩を回避！`);
+      } else {
+        earned = 1;
+        addLog(`🐂 【牛歩カード効果】取得ポイントが1になりました！（自動破棄されます）`, true, true);
+        toast(`🐂 牛歩カード効果：取得ポイント1！（破棄）`);
+        let gIdx = state.hand.indexOf(gyuhoCard.id);
+        if (gIdx >= 0) {
+          state.hand.splice(gIdx, 1);
+          state.discarded.push(gyuhoCard.id);
+        }
       }
     }
 
@@ -1199,9 +1211,18 @@ function handleIncomingData(data, fromPeerId) {
     return;
   }
 
+  if(data.type === 'card_swap_select_response') {
+    if (data.opponentCards && data.opponentCards.length > 0) {
+      openSwapOpponentSelectModal(fromPeerId, data.opponentCards);
+    } else {
+      toast("相手の手札に交換可能なカードがありませんでした");
+    }
+    return;
+  }
+
   if(data.type === 'card_swap_execute') {
-    let takeCardName = data.takeCardName;
-    let giveCardName = data.giveCardName;
+    let takeCardName = data.takeCardName; // 自分が失うカード
+    let giveCardName = data.giveCardName; // 相手から貰うカード
 
     let idx = state.hand.findIndex(id => getCard(id)?.name === takeCardName);
     if (idx >= 0) {
@@ -1212,6 +1233,7 @@ function handleIncomingData(data, fromPeerId) {
     }
     save();
     toast(`カード交換により「${takeCardName}」を渡し、「${giveCardName}」を受け取りました`);
+    addLog(`🔄 カード交換が実行され、「${takeCardName}」を渡し「${giveCardName}」を受け取りました。`);
     return;
   }
 
@@ -1328,13 +1350,15 @@ function handleIncomingData(data, fromPeerId) {
   }
   if(data.type === 'steal_history') {
     let targetName = data.cardName;
-    let targetCard = state.historyHand.map(id => getCard(id)).find(c => c && c.name === targetName);
+    let targetCard = state.historyHand.map(id => getCard(id)).find(c => c && c.name.replace(/【.*?】/g, "") === targetName);
     if (targetCard) {
       let idx = state.historyHand.indexOf(targetCard.id);
       if (idx >= 0) {
         state.historyHand.splice(idx, 1);
-        state.historyDiscarded.push(targetCard.id);
+        delete state.historyStatus[targetCard.id];
         save();
+        toast(`深田えいみにより「${targetName}」が寝取られ消滅しました！`);
+        addLog(`💋 深田えいみにより歴史ヒーロー「${targetName}」が寝取られました。`);
       }
     }
     return;
@@ -1448,18 +1472,8 @@ function setTurn(newTurn, shouldBroadcast = true) {
   if (hasAbdullah && hasBlackCard) {
     if (Math.random() < 0.5) {
       abdullahBlock = true;
-      addLog("👳‍♂️ 【アブドラ発動】今ターン黒いカードの効果を無効化します！", true, true);
+      addLog("👳‍♂️ 【アブドラ発動】今ターン黒いカードの効果を無効化します！（牛歩カードは消えず効果を受けなくなります）", true, true);
       toast("👳‍♂️ アブドラ発動！黒いカードの効果を無効化！");
-
-      let gyuhoIdx = state.hand.findIndex(id => {
-        let c = getCard(id);
-        return c && c.name === "牛歩カード";
-      });
-      if (gyuhoIdx >= 0) {
-        let desId = state.hand.splice(gyuhoIdx, 1)[0];
-        state.discarded.push(desId);
-        addLog("🐂 アブドラ発動により牛歩カードが破棄されました。", true, true);
-      }
 
       let sibariIdx = state.hand.findIndex(id => {
         let c = getCard(id);
@@ -1489,6 +1503,15 @@ function setTurn(newTurn, shouldBroadcast = true) {
       state.points -= devilPenalties;
       addLog(`👿 【デビル効果】ターン終了時にポイントが ${devilPenalties}pt 減少しました。（現在: ${state.points}pt）`, true, true);
       toast(`👿 デビル効果: -${devilPenalties}pt`);
+    }
+  } else {
+    let hasDevil = state.hand.some(id => {
+      let c = getCard(id);
+      return c && (c.name === "デビルカード" || c.name === "キングデビルカード");
+    });
+    if (hasDevil) {
+      addLog("👳‍♂️ 【アブドラ効果適応】デビルカード/キングデビルカードのターン終了時ポイント減算効果が打ち消されました！", true, true);
+      toast("👳‍♂️ アブドラ効果でデビルのポイント減算を回避！");
     }
   }
 
@@ -1701,24 +1724,105 @@ function promptAndStealKatana(targetPeerId) {
   sendToTarget(targetPeerId, { type: 'katana_steal_request' });
 }
 
+let swapStateData = { usingCardId: null, mySelectedCardId: null, targetPeerId: null };
+
+function openSwapMyCardModal(cardId) {
+  swapStateData.usingCardId = cardId;
+  let overlay = document.getElementById("swapOverlay");
+  let title = document.getElementById("swapStepTitle");
+  let desc = document.getElementById("swapStepDesc");
+  let list = document.getElementById("swapCardList");
+
+  title.textContent = "🔄 カード交換 (Step 1/2)";
+  desc.textContent = "相手に渡す自分の手札カードを1枚選んでください（使用中のカード交換カードを除く）";
+  list.innerHTML = "";
+
+  let candidates = state.hand.filter(id => id !== cardId);
+  if (candidates.length === 0) {
+    toast("交換に差し出す他の手札カードがありません");
+    return;
+  }
+
+  candidates.forEach(id => {
+    let c = getCard(id);
+    if (!c) return;
+    let btn = document.createElement("button");
+    btn.className = "draw";
+    btn.style.fontSize = "16px";
+    btn.textContent = `${c.name} (${c.color})`;
+    btn.onclick = () => {
+      swapStateData.mySelectedCardId = id;
+      let targetPeerId = selectPeerDialog("カード交換を行う相手を選択してください:");
+      if (!targetPeerId) return;
+      swapStateData.targetPeerId = targetPeerId;
+      sendToTarget(targetPeerId, { type: 'card_swap_select_request' });
+      overlay.style.display = "none";
+      toast("相手の手札データ取得要求を送信中...");
+    };
+    list.appendChild(btn);
+  });
+
+  overlay.style.display = "flex";
+}
+
+function openSwapOpponentSelectModal(targetPeerId, opponentCards) {
+  let overlay = document.getElementById("swapOverlay");
+  let title = document.getElementById("swapStepTitle");
+  let desc = document.getElementById("swapStepDesc");
+  let list = document.getElementById("swapCardList");
+
+  title.textContent = "🔄 カード交換 (Step 2/2)";
+  desc.textContent = "相手の手札から受け取りたいカードを1枚選んでください";
+  list.innerHTML = "";
+
+  opponentCards.forEach(cardName => {
+    let btn = document.createElement("button");
+    btn.className = "draw";
+    btn.style.fontSize = "16px";
+    btn.style.background = "var(--gold)";
+    btn.style.color = "#000";
+    btn.textContent = cardName;
+    btn.onclick = () => {
+      let giveCardObj = getCard(swapStateData.mySelectedCardId);
+      let giveCardName = giveCardObj ? giveCardObj.name : "";
+
+      let myIdx = state.hand.indexOf(swapStateData.mySelectedCardId);
+      if (myIdx >= 0) {
+        state.hand.splice(myIdx, 1);
+      }
+      let usingIdx = state.hand.indexOf(swapStateData.usingCardId);
+      if (usingIdx >= 0) {
+        state.hand.splice(usingIdx, 1);
+        state.used.push(swapStateData.usingCardId);
+      }
+
+      addCardByName(cardName);
+
+      sendToTarget(targetPeerId, {
+        type: 'card_swap_execute',
+        takeCardName: cardName,
+        giveCardName: giveCardName
+      });
+
+      overlay.style.display = "none";
+      save();
+      let targetName = otherStates[targetPeerId]?.name || "相手";
+      toast(`交換完了！ 「${giveCardName}」を渡し、「${cardName}」を受け取りました`);
+      addLog(`🔄 【カード交換】 ${targetName} とカード交換を行い、「${giveCardName}」を渡し「${cardName}」を受け取りました。`);
+    };
+    list.appendChild(btn);
+  });
+
+  overlay.style.display = "flex";
+}
+
+document.getElementById("cancelSwapBtn").onclick = () => {
+  document.getElementById("swapOverlay").style.display = "none";
+  toast("カード交換をキャンセルしました");
+};
+
 function promptAndSwapCard(targetPeerId) {
-  if (state.hand.length === 0) {
-    toast("自分が渡す手札カードがありません");
-    return;
-  }
-
-  let myHandCards = state.hand.map(id => getCard(id)).filter(Boolean);
-  let myOptions = myHandCards.map((c, idx) => `${idx + 1}: ${c.name}`).join("\n");
-  let myInput = prompt(`相手に渡す自分のカードを選んでください:\n${myOptions}`);
-  let selMyIdx = parseInt(myInput, 10) - 1;
-  if (isNaN(selMyIdx) || selMyIdx < 0 || selMyIdx >= myHandCards.length) {
-    toast("有効なカードを選択してください");
-    return;
-  }
-  let giveCard = myHandCards[selMyIdx];
-
-  sendToTarget(targetPeerId, { type: 'card_swap_select_request' });
-  toast("相手の手札カード選択を要求中...");
+  openSwapMyCardModal(null);
 }
 
 function promptAndDestroyCard(targetPeerId) {
@@ -1888,9 +1992,12 @@ function handleNormalCardUse(card) {
     promptAndStealKatana(targetPeerId);
   }
   else if (card.name === "カード交換カード") {
-    let targetPeerId = selectPeerDialog("カード交換を行うプレイヤーを選んでください:");
-    if (!targetPeerId) return false;
-    promptAndSwapCard(targetPeerId);
+    if (state.hand.length <= 1) {
+      toast("他に交換に差し出せるカードがありません");
+      return false;
+    }
+    openSwapMyCardModal(card.id);
+    return false; // 非同期処理にてカード消費するため手動制御
   }
   else if (card.name === "リニアカード") {
     linearNextFlag = true;
@@ -2028,12 +2135,20 @@ function handleHistoryCardUse(card) {
   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
 
   if (card.name === "かわらばやし") {
-    let options = [1, 3, 5];
-    let earned = options[Math.floor(Math.random() * options.length)];
-    state.points += earned;
-    broadcastHistoryUse("かわらばやし", `ランダムポイント抽選で +${earned}pt を獲得！`);
-    toast(`かわらばやし：+${earned}pt 獲得！`);
-    return false; // 使用ボタンを押してもカードを消費・手札から削除しない
+    let isKubi = Math.random() < 0.2; // 発動時に低確率で「クビ」判定
+    if (isKubi) {
+      state.points = 0;
+      addLog(`💥 【かわらばやし：クビ発動！】 ボタンを押した結果「クビ」を引いてしまい、所持ポイントが0になりかわらばやしが消滅しました！`, true, true);
+      toast("💥 かわらばやし：クビ！ 所持ポイントが0になりました！");
+      return true; // カードを消費して手札から消滅させる
+    } else {
+      let options = [1, 3, 5];
+      let earned = options[Math.floor(Math.random() * options.length)];
+      state.points += earned;
+      broadcastHistoryUse("かわらばやし", `ランダムポイント抽選で +${earned}pt を獲得！`);
+      toast(`かわらばやし：+${earned}pt 獲得！`);
+      return false; // カードは保持
+    }
   }
   else if (card.name === "クーパー") {
     let peerKeys = Object.keys(otherStates);
@@ -2140,19 +2255,6 @@ function drawCard(){
   state.hand.push(id);
   let c=getCard(id);
 
-  if (c && c.name === "かわらばやし" && c.color === "紫") {
-    state.points = 0;
-    addLog(`💥 【かわらばやし：クビ！】 引いてしまったため所持ポイントが0になりました！`, true, true);
-    toast("💥 かわらばやし：クビ！ 所持ポイントが0になりました！");
-    let hIdx = state.hand.indexOf(id);
-    if (hIdx >= 0) {
-      state.hand.splice(hIdx, 1);
-      state.discarded.push(id);
-    }
-    save();
-    return;
-  }
-
   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
   addLog(`🎴 ${myName} が山札からカードを1枚引きました。`);
 
@@ -2185,15 +2287,6 @@ function drawHistoryCard(){
   
   let c=getCard(id);
   let myName = document.getElementById("playerNameInput").value.trim() || "自分";
-
-  if (c && c.name === "かわらばやし") {
-    state.points = 0;
-    addLog(`💥 【かわらばやし：クビ！】 引いてしまったため所持ポイントが0になりました！`, true, true);
-    toast("💥 かわらばやし：クビ！ 所持ポイントが0になりました！");
-    state.historyDiscarded.push(id);
-    save();
-    return;
-  }
 
   state.historyHand.push(id);
   addLog(`📜 ${myName} が10ptを消費して歴史ヒーロー「${c?.name || 'カード'}」を獲得しました！`);
